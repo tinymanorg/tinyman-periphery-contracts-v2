@@ -89,6 +89,10 @@ class TestSwapRouterOptIn(SwapRouterTestCase):
         self.create_swap_router_app()
         self.ledger.set_account_balance(self.user_addr, 1_000_000)
 
+        self.ledger.create_asset(asset_id=self.asset_a_id)
+        self.ledger.create_asset(asset_id=self.asset_b_id)
+        self.ledger.create_asset(asset_id=self.asset_c_id)
+
     def test_asset_opt_in(self):
         txn_group = [
             transaction.PaymentTxn(
