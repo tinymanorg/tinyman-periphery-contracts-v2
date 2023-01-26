@@ -4,6 +4,9 @@
 if Txn.ApplicationID == 0:
     # Create App
     app_global_put("tinyman_app_id", Txn.Applications[1])
+
+    app_global_put("manager", Txn.Sender)
+    app_global_put("extra_collector", Txn.Sender)
     exit(1)
 end
 
@@ -21,8 +24,11 @@ end
 
 block main:
     switch Txn.ApplicationArgs[0]:
-        "asset_opt_in": asset_opt_in
         "swap": swap
+        "asset_opt_in": asset_opt_in
+        "set_manager": set_manager
+        "set_extra_collector": set_extra_collector
+        "claim_extra": claim_extra
     end
 
     block asset_opt_in:
@@ -144,6 +150,45 @@ block main:
 
         func transfer_to_user(asset_id: int, amount: int):
             return transfer(asset_id, amount, Global.CurrentApplicationAddress, user_address)
+        end
+        exit(1)
+    end
+
+    block set_manager:
+        # Set a new manager, only manager can call this method
+        # Txn: AppCall from manager
+
+        assert(Txn.Sender == app_global_get("manager"))
+
+        # State updates
+        app_global_put("manager", Txn.Accounts[1])
+
+        exit(1)
+    end
+
+    block set_extra_collector:
+        # Set a new extra collector, only manager can call this method
+        # Txn: AppCall from manager
+
+        assert(Txn.Sender == app_global_get("manager"))
+
+        # State updates
+        app_global_put("extra_collector", Txn.Accounts[1])
+
+        exit(1)
+    end
+
+    block claim_extra:
+        int asset_amount
+        int extra_asset_id
+        int asset_count = Txn.NumAssets
+
+        for i in 0:asset_count:
+            extra_asset_id = Txn.Assets[i]
+            asset_amount = get_balance(Global.CurrentApplicationAddress, extra_asset_id)
+            if asset_amount:
+                transfer(extra_asset_id, asset_amount, Global.CurrentApplicationAddress, app_global_get("extra_collector"))
+            end
         end
         exit(1)
     end

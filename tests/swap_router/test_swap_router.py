@@ -3,6 +3,7 @@ from unittest.mock import ANY
 
 from algojig import TealishProgram
 from algojig import get_suggested_params
+from algojig.exceptions import LogicEvalError
 from algojig.ledger import JigLedger
 from algosdk.account import generate_account
 from algosdk.encoding import decode_address
@@ -21,7 +22,7 @@ SWAP_ROUTER_ADDRESS = get_application_address(SWAP_ROUTER_APP_ID)
 MINIMUM_BALANCE = 100_000
 
 
-class TestSwapRouterCreateApp(TestCase):
+class CreateAppTestCase(TestCase):
     @classmethod
     def setUpClass(cls):
         cls.sp = get_suggested_params()
@@ -38,7 +39,7 @@ class TestSwapRouterCreateApp(TestCase):
             on_complete=transaction.OnComplete.NoOpOC,
             approval_program=swap_router_program.bytecode,
             clear_program=swap_clear_state_program.bytecode,
-            global_schema=transaction.StateSchema(num_uints=1, num_byte_slices=0),
+            global_schema=transaction.StateSchema(num_uints=1, num_byte_slices=2),
             local_schema=transaction.StateSchema(num_uints=0, num_byte_slices=0),
             foreign_apps=[9988776655],
             extra_pages=0,
@@ -54,7 +55,9 @@ class TestSwapRouterCreateApp(TestCase):
         self.assertEqual(
             global_state,
             {
-                b"tinyman_app_id": 9988776655
+                b"tinyman_app_id": 9988776655,
+                b"manager": decode_address(self.app_creator_address),
+                b"extra_collector": decode_address(self.app_creator_address)
             }
         )
 
@@ -77,11 +80,13 @@ class SwapRouterTestCase(BaseTestCase):
             SWAP_ROUTER_APP_ID,
             {
                 b'tinyman_app_id': AMM_APPLICATION_ID,
+                b'manager': decode_address(self.app_creator_address),
+                b'extra_collector': decode_address(self.app_creator_address),
             }
         )
 
 
-class TestSwapRouterOptIn(SwapRouterTestCase):
+class AssetOptInTestCase(SwapRouterTestCase):
 
     def setUp(self):
         self.ledger = JigLedger()
@@ -94,13 +99,10 @@ class TestSwapRouterOptIn(SwapRouterTestCase):
         self.ledger.create_asset(asset_id=self.asset_c_id)
 
     def test_asset_opt_in(self):
+        # Assume that min balance requirement is already covered.
+        self.ledger.set_account_balance(SWAP_ROUTER_ADDRESS, MINIMUM_BALANCE * 100)
+
         txn_group = [
-            transaction.PaymentTxn(
-                sender=self.user_addr,
-                sp=self.sp,
-                receiver=SWAP_ROUTER_ADDRESS,
-                amt=MINIMUM_BALANCE * 3,
-            ),
             transaction.ApplicationNoOpTxn(
                 sender=self.user_addr,
                 sp=self.sp,
@@ -109,16 +111,15 @@ class TestSwapRouterOptIn(SwapRouterTestCase):
                 foreign_assets=[self.asset_a_id, self.asset_b_id, self.asset_c_id],
             )
         ]
-        txn_group[1].fee = 1000 + 3000
+        txn_group[0].fee = 1000 + 3000
 
         txn_group = transaction.assign_group_id(txn_group)
         stxns = [
             txn_group[0].sign(self.user_sk),
-            txn_group[1].sign(self.user_sk),
         ]
         block = self.ledger.eval_transactions(stxns)
         txns = block[b'txns']
-        inner_transactions = txns[1][b'dt'][b'itx']
+        inner_transactions = txns[0][b'dt'][b'itx']
         self.ledger.get_account_balance(SWAP_ROUTER_ADDRESS)
         self.assertEqual(len(inner_transactions), 3)
 
@@ -157,7 +158,7 @@ class TestSwapRouterOptIn(SwapRouterTestCase):
         )
 
 
-class TestSwapRouter(SwapRouterTestCase):
+class SwapTestCase(SwapRouterTestCase):
 
     def reset_ledger(self):
         self.ledger = JigLedger()
@@ -756,3 +757,500 @@ class TestSwapRouter(SwapRouterTestCase):
                             b'type': b'pay',
                         }
                     )
+
+
+class ClaimExtraTestCase(SwapRouterTestCase):
+
+    def setUp(self):
+        self.ledger = JigLedger()
+        self.create_amm_app()
+        self.create_swap_router_app()
+        self.ledger.set_account_balance(self.user_addr, 1_000_000)
+
+        self.ledger.create_asset(asset_id=self.asset_a_id)
+        self.ledger.create_asset(asset_id=self.asset_b_id)
+        self.ledger.create_asset(asset_id=self.asset_c_id)
+
+    def test_claim_extra(self):
+        unrelated_asset_id = self.ledger.create_asset(asset_id=None)
+
+        self.ledger.set_account_balance(address=SWAP_ROUTER_ADDRESS, asset_id=0, balance=1_000_000)
+        self.ledger.set_account_balance(address=SWAP_ROUTER_ADDRESS, asset_id=self.asset_a_id, balance=900_000)
+        self.ledger.set_account_balance(address=SWAP_ROUTER_ADDRESS, asset_id=self.asset_b_id, balance=0)
+        self.ledger.set_account_balance(address=SWAP_ROUTER_ADDRESS, asset_id=self.asset_c_id, balance=500_000)
+
+        extra_collector = self.app_creator_address
+        self.ledger.set_account_balance(address=extra_collector, asset_id=0, balance=1_000_000)
+        self.ledger.opt_in_asset(address=extra_collector, asset_id=self.asset_a_id)
+        self.ledger.opt_in_asset(address=extra_collector, asset_id=self.asset_b_id)
+        self.ledger.opt_in_asset(address=extra_collector, asset_id=self.asset_c_id)
+
+        txn_group = [
+            transaction.ApplicationNoOpTxn(
+                sender=self.user_addr,
+                sp=self.sp,
+                index=SWAP_ROUTER_APP_ID,
+                app_args=["claim_extra"],
+                foreign_assets=[0, self.asset_a_id, self.asset_b_id, self.asset_c_id, unrelated_asset_id],
+                accounts=[extra_collector]
+            )
+        ]
+        txn_group[0].fee = 1000 + 5000
+
+        txn_group = transaction.assign_group_id(txn_group)
+        stxns = [
+            txn_group[0].sign(self.user_sk),
+        ]
+        block = self.ledger.eval_transactions(stxns)
+        txn = block[b'txns'][0]
+        inner_transactions = txn[b'dt'][b'itx']
+
+        # Algo, Asset A, Asset C
+        self.assertEqual(len(inner_transactions), 3)
+        # Algo
+        self.assertDictEqual(
+            inner_transactions[0][b'txn'],
+            {
+                b'amt': 600000,
+                b'fv': ANY,
+                b'lv': ANY,
+                b'rcv': decode_address(extra_collector),
+                b'snd': decode_address(SWAP_ROUTER_ADDRESS),
+                b'type': b'pay'
+            }
+        )
+        # Asset A
+        self.assertDictEqual(
+            inner_transactions[1][b'txn'],
+            {
+                b'aamt': 900000,
+                b'arcv': decode_address(extra_collector),
+                b'fv': ANY,
+                b'lv': ANY,
+                b'snd': decode_address(SWAP_ROUTER_ADDRESS),
+                b'type': b'axfer',
+                b'xaid': self.asset_a_id
+            }
+        )
+        # Asset C
+        self.assertDictEqual(
+            inner_transactions[2][b'txn'],
+            {
+                b'aamt': 500000,
+                b'arcv': decode_address(extra_collector),
+                b'fv': ANY,
+                b'lv': ANY,
+                b'snd': decode_address(SWAP_ROUTER_ADDRESS),
+                b'type': b'axfer',
+                b'xaid': self.asset_c_id
+            }
+        )
+
+    def test_claim_extra_with_new_collector_address(self):
+        new_extra_collector_sk, new_extra_collector_address = generate_account()
+
+        self.ledger.update_global_state(
+            SWAP_ROUTER_APP_ID,
+            {
+                b'extra_collector': decode_address(new_extra_collector_address),
+            }
+        )
+
+        self.ledger.set_account_balance(address=SWAP_ROUTER_ADDRESS, asset_id=0, balance=1_000_000)
+
+        self.ledger.set_account_balance(address=new_extra_collector_address, asset_id=0, balance=100_000)
+
+        txn_group = [
+            transaction.ApplicationNoOpTxn(
+                sender=self.user_addr,
+                sp=self.sp,
+                index=SWAP_ROUTER_APP_ID,
+                app_args=["claim_extra"],
+                foreign_assets=[0],
+                accounts=[new_extra_collector_address]
+            )
+        ]
+        txn_group[0].fee = 1000 + 5000
+
+        txn_group = transaction.assign_group_id(txn_group)
+        stxns = [
+            txn_group[0].sign(self.user_sk),
+        ]
+        block = self.ledger.eval_transactions(stxns)
+        txn = block[b'txns'][0]
+        inner_transactions = txn[b'dt'][b'itx']
+
+        # Algo
+        self.assertEqual(len(inner_transactions), 1)
+        # Algo
+        self.assertDictEqual(
+            inner_transactions[0][b'txn'],
+            {
+                b'amt': 900000,
+                b'fv': ANY,
+                b'lv': ANY,
+                b'rcv': decode_address(new_extra_collector_address),
+                b'snd': decode_address(SWAP_ROUTER_ADDRESS),
+                b'type': b'pay'
+            }
+        )
+
+
+class SetManagerTestCase(SwapRouterTestCase):
+
+    def setUp(self):
+        self.ledger = JigLedger()
+        self.create_amm_app()
+        self.create_swap_router_app()
+        self.ledger.set_account_balance(self.app_creator_address, 1_000_000)
+
+    def test_permission(self):
+        new_account_sk, new_account_address = generate_account()
+        self.ledger.set_account_balance(new_account_address, 1_000_000)
+
+        txn_group = [
+            transaction.ApplicationNoOpTxn(
+                sender=new_account_address,
+                sp=self.sp,
+                index=SWAP_ROUTER_APP_ID,
+                app_args=["set_manager"],
+                accounts=[new_account_address]
+            )
+        ]
+
+        txn_group = transaction.assign_group_id(txn_group)
+        stxn = txn_group[0].sign(new_account_sk)
+
+        with self.assertRaises(LogicEvalError) as e:
+            self.ledger.eval_transactions([stxn])
+        self.assertEqual(e.exception.source['line'], 'assert(Txn.Sender == app_global_get("manager"))')
+
+    def test_update_manager_account(self):
+        new_manager_1_sk, new_manager_1_address = generate_account()
+        new_manager_2_sk, new_manager_2_address = generate_account()
+        self.ledger.set_account_balance(new_manager_1_address, 1_000_000)
+        self.ledger.set_account_balance(new_manager_2_address, 1_000_000)
+
+        txn_group = [
+            transaction.ApplicationNoOpTxn(
+                sender=self.app_creator_address,
+                sp=self.sp,
+                index=SWAP_ROUTER_APP_ID,
+                app_args=["set_manager"],
+                accounts=[new_manager_1_address]
+            )
+        ]
+
+        txn_group = transaction.assign_group_id(txn_group)
+        stxn = txn_group[0].sign(self.app_creator_sk)
+
+        block = self.ledger.eval_transactions([stxn])
+        txn = block[b'txns'][0]
+
+        self.assertDictEqual(
+            txn[b'dt'],
+            {
+                b'gd': {
+                    b'manager': {
+                        b'at': 1,
+                        b'bs': decode_address(new_manager_1_address)
+                    }
+                }
+            }
+        )
+        self.assertDictEqual(
+            txn[b'txn'],
+            {
+                b'apaa': [b'set_manager'],
+                b'apat': [decode_address(new_manager_1_address)],
+                b'apid': SWAP_ROUTER_APP_ID,
+                b'fee': ANY,
+                b'fv': ANY,
+                b'grp': ANY,
+                b'lv': ANY,
+                b'snd': decode_address(self.app_creator_address),
+                b'type': b'appl'
+            }
+        )
+        self.assertDictEqual(
+            self.ledger.get_global_state(SWAP_ROUTER_APP_ID),
+            {
+                b'extra_collector': decode_address(self.app_creator_address),
+                b'manager': decode_address(new_manager_1_address),
+                b'tinyman_app_id': AMM_APPLICATION_ID
+            }
+        )
+
+        txn_group = [
+            transaction.ApplicationNoOpTxn(
+                sender=new_manager_1_address,
+                sp=self.sp,
+                index=SWAP_ROUTER_APP_ID,
+                app_args=["set_manager"],
+                accounts=[new_manager_2_address]
+            )
+        ]
+
+        txn_group = transaction.assign_group_id(txn_group)
+        stxn = txn_group[0].sign(new_manager_1_sk)
+
+        block = self.ledger.eval_transactions([stxn])
+        txn = block[b'txns'][0]
+
+        self.assertDictEqual(
+            txn[b'dt'],
+            {
+                b'gd': {
+                    b'manager': {
+                        b'at': 1,
+                        b'bs': decode_address(new_manager_2_address)
+                    }
+                }
+            }
+        )
+        self.assertDictEqual(
+            txn[b'txn'],
+            {
+                b'apaa': [b'set_manager'],
+                b'apat': [decode_address(new_manager_2_address)],
+                b'apid': SWAP_ROUTER_APP_ID,
+                b'fee': ANY,
+                b'fv': ANY,
+                b'grp': ANY,
+                b'lv': ANY,
+                b'snd': decode_address(new_manager_1_address),
+                b'type': b'appl'
+            }
+        )
+        self.assertDictEqual(
+            self.ledger.get_global_state(SWAP_ROUTER_APP_ID),
+            {
+                b'extra_collector': decode_address(self.app_creator_address),
+                b'manager': decode_address(new_manager_2_address),
+                b'tinyman_app_id': AMM_APPLICATION_ID
+            }
+        )
+
+    def test_set_manager_to_current_manager_account(self):
+        txn_group = [
+            transaction.ApplicationNoOpTxn(
+                sender=self.app_creator_address,
+                sp=self.sp,
+                index=SWAP_ROUTER_APP_ID,
+                app_args=["set_manager"],
+                accounts=[self.app_creator_address]
+            )
+        ]
+
+        txn_group = transaction.assign_group_id(txn_group)
+        stxn = txn_group[0].sign(self.app_creator_sk)
+
+        block = self.ledger.eval_transactions([stxn])
+        txn = block[b'txns'][0]
+
+        self.assertEqual(txn.get(b'dt'), None)
+        self.assertDictEqual(
+            txn[b'txn'],
+            {
+                b'apaa': [b'set_manager'],
+                b'apat': [decode_address(self.app_creator_address)],
+                b'apid': SWAP_ROUTER_APP_ID,
+                b'fee': ANY,
+                b'fv': ANY,
+                b'grp': ANY,
+                b'lv': ANY,
+                b'snd': decode_address(self.app_creator_address),
+                b'type': b'appl'
+            }
+        )
+        self.assertDictEqual(
+            self.ledger.get_global_state(SWAP_ROUTER_APP_ID),
+            {
+                b'extra_collector': decode_address(self.app_creator_address),
+                b'manager': decode_address(self.app_creator_address),
+                b'tinyman_app_id': AMM_APPLICATION_ID
+            }
+        )
+
+
+class SetExtraCollectorTestCase(SwapRouterTestCase):
+
+    def setUp(self):
+        self.ledger = JigLedger()
+        self.create_amm_app()
+        self.create_swap_router_app()
+        self.ledger.set_account_balance(self.app_creator_address, 1_000_000)
+
+    def test_permission(self):
+        new_account_sk, new_account_address = generate_account()
+        self.ledger.set_account_balance(new_account_address, 1_000_000)
+
+        txn_group = [
+            transaction.ApplicationNoOpTxn(
+                sender=new_account_address,
+                sp=self.sp,
+                index=SWAP_ROUTER_APP_ID,
+                app_args=["set_extra_collector"],
+                accounts=[new_account_address]
+            )
+        ]
+
+        txn_group = transaction.assign_group_id(txn_group)
+        stxn = txn_group[0].sign(new_account_sk)
+
+        with self.assertRaises(LogicEvalError) as e:
+            self.ledger.eval_transactions([stxn])
+        self.assertEqual(e.exception.source['line'], 'assert(Txn.Sender == app_global_get("manager"))')
+
+    def test_update_extra_collector_account(self):
+        new_extra_collector_1_sk, new_extra_collector_1_address = generate_account()
+        new_extra_collector_2_sk, new_extra_collector_2_address = generate_account()
+        self.ledger.set_account_balance(new_extra_collector_1_address, 1_000_000)
+        self.ledger.set_account_balance(new_extra_collector_2_address, 1_000_000)
+
+        txn_group = [
+            transaction.ApplicationNoOpTxn(
+                sender=self.app_creator_address,
+                sp=self.sp,
+                index=SWAP_ROUTER_APP_ID,
+                app_args=["set_extra_collector"],
+                accounts=[new_extra_collector_1_address]
+            )
+        ]
+
+        txn_group = transaction.assign_group_id(txn_group)
+        stxn = txn_group[0].sign(self.app_creator_sk)
+
+        block = self.ledger.eval_transactions([stxn])
+        txn = block[b'txns'][0]
+
+        # Delta
+        self.assertDictEqual(
+            txn[b'dt'],
+            {
+                b'gd': {
+                    b'extra_collector': {
+                        b'at': 1,
+                        b'bs': decode_address(new_extra_collector_1_address)
+                    }
+                }
+            }
+        )
+        # Transaction
+        self.assertDictEqual(
+            txn[b'txn'],
+            {
+                b'apaa': [b'set_extra_collector'],
+                b'apat': [decode_address(new_extra_collector_1_address)],
+                b'apid': SWAP_ROUTER_APP_ID,
+                b'fee': ANY,
+                b'fv': ANY,
+                b'grp': ANY,
+                b'lv': ANY,
+                b'snd': decode_address(self.app_creator_address),
+                b'type': b'appl'
+            }
+        )
+        # Global State
+        self.assertDictEqual(
+            self.ledger.get_global_state(SWAP_ROUTER_APP_ID),
+            {
+                b'extra_collector': decode_address(new_extra_collector_1_address),
+                b'manager': decode_address(self.app_creator_address),
+                b'tinyman_app_id': AMM_APPLICATION_ID
+            }
+        )
+
+        txn_group = [
+            transaction.ApplicationNoOpTxn(
+                sender=self.app_creator_address,
+                sp=self.sp,
+                index=SWAP_ROUTER_APP_ID,
+                app_args=["set_extra_collector"],
+                accounts=[new_extra_collector_2_address]
+            )
+        ]
+
+        txn_group = transaction.assign_group_id(txn_group)
+        stxn = txn_group[0].sign(self.app_creator_sk)
+
+        block = self.ledger.eval_transactions([stxn])
+        txn = block[b'txns'][0]
+
+        # Delta
+        self.assertDictEqual(
+            txn[b'dt'],
+            {
+                b'gd': {
+                    b'extra_collector': {
+                        b'at': 1,
+                        b'bs': decode_address(new_extra_collector_2_address)
+                    }
+                }
+            }
+        )
+        # Transaction
+        self.assertDictEqual(
+            txn[b'txn'],
+            {
+                b'apaa': [b'set_extra_collector'],
+                b'apat': [decode_address(new_extra_collector_2_address)],
+                b'apid': SWAP_ROUTER_APP_ID,
+                b'fee': ANY,
+                b'fv': ANY,
+                b'grp': ANY,
+                b'lv': ANY,
+                b'snd': decode_address(self.app_creator_address),
+                b'type': b'appl'
+            }
+        )
+        # Global State
+        self.assertDictEqual(
+            self.ledger.get_global_state(SWAP_ROUTER_APP_ID),
+            {
+                b'extra_collector': decode_address(new_extra_collector_2_address),
+                b'manager': decode_address(self.app_creator_address),
+                b'tinyman_app_id': AMM_APPLICATION_ID
+            }
+        )
+
+    def test_set_extra_collector_to_current_extra_collector(self):
+        txn_group = [
+            transaction.ApplicationNoOpTxn(
+                sender=self.app_creator_address,
+                sp=self.sp,
+                index=SWAP_ROUTER_APP_ID,
+                app_args=["set_extra_collector"],
+                accounts=[self.app_creator_address]
+            )
+        ]
+
+        txn_group = transaction.assign_group_id(txn_group)
+        stxn = txn_group[0].sign(self.app_creator_sk)
+
+        block = self.ledger.eval_transactions([stxn])
+        txn = block[b'txns'][0]
+
+        self.assertEqual(txn.get(b'dt'), None)
+        self.assertDictEqual(
+            txn[b'txn'],
+            {
+                b'apaa': [b'set_extra_collector'],
+                b'apat': [decode_address(self.app_creator_address)],
+                b'apid': SWAP_ROUTER_APP_ID,
+                b'fee': ANY,
+                b'fv': ANY,
+                b'grp': ANY,
+                b'lv': ANY,
+                b'snd': decode_address(self.app_creator_address),
+                b'type': b'appl'
+            }
+        )
+        self.assertDictEqual(
+            self.ledger.get_global_state(SWAP_ROUTER_APP_ID),
+            {
+                b'extra_collector': decode_address(self.app_creator_address),
+                b'manager': decode_address(self.app_creator_address),
+                b'tinyman_app_id': AMM_APPLICATION_ID
+            }
+        )
