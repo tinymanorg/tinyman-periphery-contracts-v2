@@ -22,6 +22,17 @@ SWAP_ROUTER_ADDRESS = get_application_address(SWAP_ROUTER_APP_ID)
 MINIMUM_BALANCE = 100_000
 
 
+def print_logs(txn):
+    logs = txn[b'dt'].get(b'lg')
+    if logs:
+        for log in logs:
+            if b'%i' in log:
+                i = log.index(b'%i')
+                s = log[0:i].decode()
+                value = int.from_bytes(log[i + 2:], 'big')
+                print(f'{s}: {value}')
+
+
 class CreateAppTestCase(TestCase):
     @classmethod
     def setUpClass(cls):
@@ -803,6 +814,7 @@ class ClaimExtraTestCase(SwapRouterTestCase):
         ]
         block = self.ledger.eval_transactions(stxns)
         txn = block[b'txns'][0]
+        print_logs(txn)
         inner_transactions = txn[b'dt'][b'itx']
 
         # Algo, Asset A, Asset C

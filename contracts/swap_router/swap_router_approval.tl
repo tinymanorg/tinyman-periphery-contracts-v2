@@ -4,7 +4,6 @@
 if Txn.ApplicationID == 0:
     # Create App
     app_global_put("tinyman_app_id", Txn.Applications[1])
-
     app_global_put("manager", Txn.Sender)
     app_global_put("extra_collector", Txn.Sender)
     exit(1)
@@ -43,7 +42,7 @@ block main:
     end
 
     block swap:
-        # Assert that Txn.Applications[1] is Tinyman AMM V2.
+        # Assert that Txn.Applications[1] is Tinyman AMM V2
         assert(app_global_get("tinyman_app_id") == Txn.Applications[1])
 
         bytes user_address = Txn.Sender
@@ -55,8 +54,20 @@ block main:
         int intermediary_asset_id = Txn.Assets[1]
         int output_asset_id = Txn.Assets[2]
 
+        # Fail if the application is not opted in to assets
+        int is_opted_in
+        if intermediary_asset_id:
+            is_opted_in, _ = asset_holding_get(AssetBalance, Global.CurrentApplicationAddress, intermediary_asset_id)
+            assert(is_opted_in)
+        end
+        if output_asset_id:
+            is_opted_in, _ = asset_holding_get(AssetBalance, Global.CurrentApplicationAddress, output_asset_id)
+            assert(is_opted_in)
+        end
+
         # Check input transaction
         int input_amount
+        assert(Txn.GroupIndex)
         int input_txn_index = Txn.GroupIndex - 1
         assert(Gtxn[input_txn_index].Sender == user_address)
 
@@ -71,6 +82,7 @@ block main:
         else:
             error()
         end
+        assert(input_amount)
 
         # Swap Modes
         switch Txn.ApplicationArgs[1]:
@@ -94,7 +106,7 @@ block main:
             assert(swap_2_output_amount >= minimum_output_amount)
 
             # Transfer output to user
-            transfer_to_user(output_asset_id, swap_2_output_amount)
+            transfer(output_asset_id, swap_2_output_amount, Global.CurrentApplicationAddress, user_address)
             exit(1)
         end
 
@@ -139,19 +151,15 @@ block main:
             # Transfer change to user if exists
             int change = input_amount - swap_1_required_input_amount
             if change:
-                transfer_to_user(input_asset_id, change)
+                transfer(input_asset_id, change, Global.CurrentApplicationAddress, user_address)
             end
 
             # Transfer output to user
-            transfer_to_user(output_asset_id, output_amount)
+            transfer(output_asset_id, output_amount, Global.CurrentApplicationAddress, user_address)
 
             exit(1)
         end
-
-        func transfer_to_user(asset_id: int, amount: int):
-            return transfer(asset_id, amount, Global.CurrentApplicationAddress, user_address)
-        end
-        exit(1)
+        exit(0)
     end
 
     block set_manager:
@@ -179,6 +187,11 @@ block main:
     end
 
     block claim_extra:
+        # Transfer any extra (donations) to the extra_collector
+
+        # It must be the first txn of the group.
+        assert(Txn.GroupIndex == 0)
+
         int asset_amount
         int extra_asset_id
         int asset_count = Txn.NumAssets
@@ -192,7 +205,7 @@ block main:
         end
         exit(1)
     end
-    exit(1)
+    exit(0)
 end
 
 func tinyman_swap(pool_address: bytes, mode: bytes, asset_in_id: int, asset_out_id: int, asset_input_amount: int, minimum_output_amount: int) int, int:
