@@ -21,6 +21,12 @@ block fail:
     exit(0)
 end
 
+block update:
+    # TODO: REMOVE THIS FOR MAINNET!
+    assert(Txn.Sender == Global.CreatorAddress)
+    exit(1)
+end
+
 block main:
     switch Txn.ApplicationArgs[0]:
         "swap": swap
