@@ -13,7 +13,7 @@ switch Txn.OnCompletion:
     NoOp: main
     OptIn: fail
     CloseOut: fail
-    UpdateApplication: fail
+    UpdateApplication: update
     DeleteApplication: fail
 end
 
