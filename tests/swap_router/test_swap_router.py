@@ -1,10 +1,12 @@
 from unittest import TestCase
 from unittest.mock import ANY
 
+from Cryptodome.Hash import SHA512
 from algojig import TealishProgram
 from algojig import get_suggested_params
 from algojig.exceptions import LogicEvalError
 from algojig.ledger import JigLedger
+from algosdk.abi import Argument
 from algosdk.account import generate_account
 from algosdk.encoding import decode_address
 from algosdk.future import transaction
@@ -22,15 +24,17 @@ SWAP_ROUTER_ADDRESS = get_application_address(SWAP_ROUTER_APP_ID)
 MINIMUM_BALANCE = 100_000
 
 
-def print_logs(txn):
-    logs = txn[b'dt'].get(b'lg')
-    if logs:
-        for log in logs:
-            if b'%i' in log:
-                i = log.index(b'%i')
-                s = log[0:i].decode()
-                value = int.from_bytes(log[i + 2:], 'big')
-                print(f'{s}: {value}')
+def get_event_signature(event_name, event_args):
+    arg_string = ",".join(str(arg.type) for arg in event_args)
+    event_signature = "{}({})".format(event_name, arg_string)
+    return event_signature
+
+
+def get_selector(signature):
+    sha_512_256_hash = SHA512.new(truncate="256")
+    sha_512_256_hash.update(signature.encode("utf-8"))
+    selector = sha_512_256_hash.digest()[:4]
+    return selector
 
 
 class CreateAppTestCase(TestCase):
@@ -210,6 +214,15 @@ class SwapTestCase(SwapRouterTestCase):
             }
         ]
 
+        fixed_input_event_args = [
+            Argument(arg_type="uint64", name="input_asset_id"),
+            Argument(arg_type="uint64", name="output_asset_id"),
+            Argument(arg_type="uint64", name="input_amount"),
+            Argument(arg_type="uint64", name="output_amount")
+        ]
+        fixed_input_event_signature = get_event_signature(event_name="fixed-input", event_args=fixed_input_event_args)
+        fixed_input_event_selector = get_selector(signature=fixed_input_event_signature)
+
         for test_case in test_cases:
             self.reset_ledger()
 
@@ -288,6 +301,15 @@ class SwapTestCase(SwapRouterTestCase):
 
                 block = self.ledger.eval_transactions(stxns)
                 txns = block[b'txns']
+
+                logs = txns[1][b'dt'].get(b'lg')
+                event_log = (logs[0])
+                self.assertEqual(event_log[:4], fixed_input_event_selector)
+                self.assertEqual(int.from_bytes(event_log[4:12], 'big'), input_asset_id)
+                self.assertEqual(int.from_bytes(event_log[12:20], 'big'), output_asset_id)
+                self.assertEqual(int.from_bytes(event_log[20:28], 'big'), input_amount)
+                self.assertEqual(int.from_bytes(event_log[28:36], 'big'), output_amount)
+
                 inner_transactions = txns[1][b'dt'][b'itx']
                 self.assertEqual(len(inner_transactions), 5)
 
@@ -488,6 +510,16 @@ class SwapTestCase(SwapRouterTestCase):
             }
         ]
 
+        fixed_output_event_args = [
+            Argument(arg_type="uint64", name="input_asset_id"),
+            Argument(arg_type="uint64", name="output_asset_id"),
+            Argument(arg_type="uint64", name="input_amount"),
+            Argument(arg_type="uint64", name="change_amount"),
+            Argument(arg_type="uint64", name="output_amount"),
+        ]
+        fixed_output_event_signature = get_event_signature(event_name="fixed-output", event_args=fixed_output_event_args)
+        fixed_output_event_selector = get_selector(signature=fixed_output_event_signature)
+
         for test_case in test_cases:
             self.reset_ledger()
 
@@ -566,6 +598,16 @@ class SwapTestCase(SwapRouterTestCase):
 
                 block = self.ledger.eval_transactions(stxns)
                 txns = block[b'txns']
+
+                logs = txns[1][b'dt'].get(b'lg')
+                event_log = (logs[0])
+                self.assertEqual(event_log[:4], fixed_output_event_selector)
+                self.assertEqual(int.from_bytes(event_log[4:12], 'big'), input_asset_id)
+                self.assertEqual(int.from_bytes(event_log[12:20], 'big'), output_asset_id)
+                self.assertEqual(int.from_bytes(event_log[20:28], 'big'), input_amount)
+                self.assertEqual(int.from_bytes(event_log[28:36], 'big'), change_amount)
+                self.assertEqual(int.from_bytes(event_log[36:44], 'big'), output_amount)
+
                 inner_transactions = txns[1][b'dt'][b'itx']
                 self.assertEqual(len(inner_transactions), 6)
 

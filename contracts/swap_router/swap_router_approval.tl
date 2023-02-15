@@ -107,6 +107,8 @@ block main:
 
             # Transfer output to user
             transfer(output_asset_id, swap_2_output_amount, Global.CurrentApplicationAddress, user_address)
+
+            log(concat(concat(concat(concat(method("fixed-input(uint64,uint64,uint64,uint64)"), itob(input_asset_id)), itob(output_asset_id)), itob(input_amount)), itob(swap_2_output_amount)))
             exit(1)
         end
 
@@ -157,6 +159,7 @@ block main:
             # Transfer output to user
             transfer(output_asset_id, output_amount, Global.CurrentApplicationAddress, user_address)
 
+            log(concat(concat(concat(concat(concat(method("fixed-output(uint64,uint64,uint64,uint64)"), itob(input_asset_id)), itob(output_asset_id)), itob(input_amount)), itob(change)), itob(swap_2_output_amount))))
             exit(1)
         end
         exit(0)
@@ -299,7 +302,7 @@ func opt_in_to_asset_if_needed(asset_id: int):
 end
 
 func get_balance(account_address: bytes, asset_id: int) int:
-    # This function is copied from Tinyman AMM Contracts V2 with a minor chage.
+    # This function is copied from Tinyman AMM Contracts V2 with a minor change.
     # account_idx is updated as account_address to increase reability.
     # Ref: https://github.com/tinymanorg/tinyman-amm-contracts-v2/blob/main/contracts/amm_approval.tl#L1136
 
