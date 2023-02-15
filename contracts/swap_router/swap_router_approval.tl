@@ -108,7 +108,7 @@ block main:
             # Transfer output to user
             transfer(output_asset_id, swap_2_output_amount, Global.CurrentApplicationAddress, user_address)
 
-            log(concat(concat(concat(concat(method("fixed-input(uint64,uint64,uint64,uint64)"), itob(input_asset_id)), itob(output_asset_id)), itob(input_amount)), itob(swap_2_output_amount)))
+            log(concat(concat(concat(concat(method("swap(uint64,uint64,uint64,uint64)"), itob(input_asset_id)), itob(output_asset_id)), itob(input_amount)), itob(swap_2_output_amount)))
             exit(1)
         end
 
@@ -159,7 +159,7 @@ block main:
             # Transfer output to user
             transfer(output_asset_id, output_amount, Global.CurrentApplicationAddress, user_address)
 
-            log(concat(concat(concat(concat(concat(method("fixed-output(uint64,uint64,uint64,uint64)"), itob(input_asset_id)), itob(output_asset_id)), itob(input_amount)), itob(change)), itob(swap_2_output_amount))))
+            log(concat(concat(concat(concat(method("swap(uint64,uint64,uint64,uint64)"), itob(input_asset_id)), itob(output_asset_id)), itob(input_amount - change)), itob(swap_2_output_amount)))
             exit(1)
         end
         exit(0)
