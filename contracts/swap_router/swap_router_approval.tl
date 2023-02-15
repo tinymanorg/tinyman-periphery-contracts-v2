@@ -1,7 +1,7 @@
 #pragma version 7
 
 
-if Txn.ApplicationID == 0:
+if !Txn.ApplicationID:
     # Create App
     app_global_put("tinyman_app_id", Txn.Applications[1])
     app_global_put("manager", Txn.Sender)
@@ -79,7 +79,7 @@ block main:
 
         if Gtxn[input_txn_index].TypeEnum == Pay:
             assert(Gtxn[input_txn_index].Receiver == Global.CurrentApplicationAddress)
-            assert(input_asset_id == 0)
+            assert(!input_asset_id)
             input_amount = Gtxn[input_txn_index].Amount
         elif Gtxn[input_txn_index].TypeEnum == Axfer:
             assert(Gtxn[input_txn_index].AssetReceiver == Global.CurrentApplicationAddress)
@@ -113,6 +113,8 @@ block main:
 
             # Transfer output to user
             transfer(output_asset_id, swap_2_output_amount, Global.CurrentApplicationAddress, user_address)
+
+            log(concat(concat(concat(concat(method("fixed-input(uint64,uint64,uint64,uint64)"), itob(input_asset_id)), itob(output_asset_id)), itob(input_amount)), itob(swap_2_output_amount)))
             exit(1)
         end
 
@@ -145,14 +147,14 @@ block main:
             int swap_1_output_amount
             swap_1_output_amount, change_amount = tinyman_swap(pool_1_address, "fixed-output", input_asset_id, intermediary_asset_id, swap_1_required_input_amount, swap_2_required_input_amount)
             assert(swap_1_output_amount == swap_2_required_input_amount)
-            assert(change_amount == 0)
+            assert(!change_amount)
             
             # Swap 2
             # Exact input amount is calculated, fixed output swap won't generate a change transaction.
             int swap_2_output_amount
             swap_2_output_amount, change_amount = tinyman_swap(pool_2_address, "fixed-output", intermediary_asset_id, output_asset_id, swap_2_required_input_amount, output_amount)
             assert(swap_2_output_amount == output_amount)
-            assert(change_amount == 0)
+            assert(!change_amount)
 
             # Transfer change to user if exists
             int change = input_amount - swap_1_required_input_amount
@@ -163,6 +165,7 @@ block main:
             # Transfer output to user
             transfer(output_asset_id, output_amount, Global.CurrentApplicationAddress, user_address)
 
+            log(concat(concat(concat(concat(concat(method("fixed-output(uint64,uint64,uint64,uint64)"), itob(input_asset_id)), itob(output_asset_id)), itob(input_amount)), itob(change)), itob(swap_2_output_amount))))
             exit(1)
         end
         exit(0)
@@ -217,7 +220,6 @@ end
 func tinyman_swap(pool_address: bytes, mode: bytes, asset_in_id: int, asset_out_id: int, asset_input_amount: int, minimum_output_amount: int) int, int:
     int initial_input_balance = get_balance(Global.CurrentApplicationAddress, asset_in_id)
     int initial_output_balance = get_balance(Global.CurrentApplicationAddress, asset_out_id)
-    int tinyman_app_id = app_global_get("tinyman_app_id")
 
     if asset_in_id:
         inner_group:
@@ -231,7 +233,7 @@ func tinyman_swap(pool_address: bytes, mode: bytes, asset_in_id: int, asset_out_
             inner_txn:
                 TypeEnum: Appl
                 Fee: 0
-                ApplicationID: tinyman_app_id
+                ApplicationID: app_global_get("tinyman_app_id")
                 ApplicationArgs[0]: "swap"
                 ApplicationArgs[1]: mode
                 ApplicationArgs[2]: itob(minimum_output_amount)
@@ -251,7 +253,7 @@ func tinyman_swap(pool_address: bytes, mode: bytes, asset_in_id: int, asset_out_
             inner_txn:
                 TypeEnum: Appl
                 Fee: 0
-                ApplicationID: tinyman_app_id
+                ApplicationID: app_global_get("tinyman_app_id")
                 ApplicationArgs[0]: "swap"
                 ApplicationArgs[1]: mode
                 ApplicationArgs[2]: itob(minimum_output_amount)
@@ -306,12 +308,12 @@ func opt_in_to_asset_if_needed(asset_id: int):
 end
 
 func get_balance(account_address: bytes, asset_id: int) int:
-    # This function is copied from Tinyman AMM Contracts V2 with a minor chage.
+    # This function is copied from Tinyman AMM Contracts V2 with a minor change.
     # account_idx is updated as account_address to increase reability.
     # Ref: https://github.com/tinymanorg/tinyman-amm-contracts-v2/blob/main/contracts/amm_approval.tl#L1136
 
     int balance = 0
-    if asset_id == 0:
+    if !asset_id:
         balance = balance(account_address) - min_balance(account_address)
     else:
         _, balance = asset_holding_get(AssetBalance, account_address, asset_id)
@@ -347,9 +349,10 @@ end
 
 func transfer(asset_id: int, amount: int, sender: bytes, receiver: bytes):
     # This function is copied from Tinyman AMM Contracts V2.
+    # "asset_id == 0" is updated as "!asset_id" for budget optimization.
     # https://github.com/tinymanorg/tinyman-amm-contracts-v2/blob/main/contracts/amm_approval.tl#L1146
 
-    if asset_id == 0:
+    if !asset_id:
         inner_txn:
             TypeEnum: Pay
             Sender: sender
