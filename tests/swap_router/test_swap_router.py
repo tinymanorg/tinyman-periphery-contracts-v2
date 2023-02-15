@@ -175,6 +175,18 @@ class AssetOptInTestCase(SwapRouterTestCase):
 
 class SwapTestCase(SwapRouterTestCase):
 
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        swap_event_args = [
+            Argument(arg_type="uint64", name="input_asset_id"),
+            Argument(arg_type="uint64", name="output_asset_id"),
+            Argument(arg_type="uint64", name="input_amount"),
+            Argument(arg_type="uint64", name="output_amount")
+        ]
+        swap_event_signature = get_event_signature(event_name="swap", event_args=swap_event_args)
+        cls.swap_event_selector = get_selector(signature=swap_event_signature)
+
     def reset_ledger(self):
         self.ledger = JigLedger()
         self.create_amm_app()
@@ -213,15 +225,6 @@ class SwapTestCase(SwapRouterTestCase):
                 "output_asset_id": 0,
             }
         ]
-
-        fixed_input_event_args = [
-            Argument(arg_type="uint64", name="input_asset_id"),
-            Argument(arg_type="uint64", name="output_asset_id"),
-            Argument(arg_type="uint64", name="input_amount"),
-            Argument(arg_type="uint64", name="output_amount")
-        ]
-        fixed_input_event_signature = get_event_signature(event_name="fixed-input", event_args=fixed_input_event_args)
-        fixed_input_event_selector = get_selector(signature=fixed_input_event_signature)
 
         for test_case in test_cases:
             self.reset_ledger()
@@ -303,8 +306,8 @@ class SwapTestCase(SwapRouterTestCase):
                 txns = block[b'txns']
 
                 logs = txns[1][b'dt'].get(b'lg')
-                event_log = (logs[0])
-                self.assertEqual(event_log[:4], fixed_input_event_selector)
+                event_log = logs[0]
+                self.assertEqual(event_log[:4], self.swap_event_selector)
                 self.assertEqual(int.from_bytes(event_log[4:12], 'big'), input_asset_id)
                 self.assertEqual(int.from_bytes(event_log[12:20], 'big'), output_asset_id)
                 self.assertEqual(int.from_bytes(event_log[20:28], 'big'), input_amount)
@@ -510,16 +513,6 @@ class SwapTestCase(SwapRouterTestCase):
             }
         ]
 
-        fixed_output_event_args = [
-            Argument(arg_type="uint64", name="input_asset_id"),
-            Argument(arg_type="uint64", name="output_asset_id"),
-            Argument(arg_type="uint64", name="input_amount"),
-            Argument(arg_type="uint64", name="change_amount"),
-            Argument(arg_type="uint64", name="output_amount"),
-        ]
-        fixed_output_event_signature = get_event_signature(event_name="fixed-output", event_args=fixed_output_event_args)
-        fixed_output_event_selector = get_selector(signature=fixed_output_event_signature)
-
         for test_case in test_cases:
             self.reset_ledger()
 
@@ -600,13 +593,12 @@ class SwapTestCase(SwapRouterTestCase):
                 txns = block[b'txns']
 
                 logs = txns[1][b'dt'].get(b'lg')
-                event_log = (logs[0])
-                self.assertEqual(event_log[:4], fixed_output_event_selector)
+                event_log = logs[0]
+                self.assertEqual(event_log[:4], self.swap_event_selector)
                 self.assertEqual(int.from_bytes(event_log[4:12], 'big'), input_asset_id)
                 self.assertEqual(int.from_bytes(event_log[12:20], 'big'), output_asset_id)
-                self.assertEqual(int.from_bytes(event_log[20:28], 'big'), input_amount)
-                self.assertEqual(int.from_bytes(event_log[28:36], 'big'), change_amount)
-                self.assertEqual(int.from_bytes(event_log[36:44], 'big'), output_amount)
+                self.assertEqual(int.from_bytes(event_log[20:28], 'big'), input_amount - change_amount)
+                self.assertEqual(int.from_bytes(event_log[28:36], 'big'), output_amount)
 
                 inner_transactions = txns[1][b'dt'][b'itx']
                 self.assertEqual(len(inner_transactions), 6)
@@ -856,7 +848,6 @@ class ClaimExtraTestCase(SwapRouterTestCase):
         ]
         block = self.ledger.eval_transactions(stxns)
         txn = block[b'txns'][0]
-        print_logs(txn)
         inner_transactions = txn[b'dt'][b'itx']
 
         # Algo, Asset A, Asset C
