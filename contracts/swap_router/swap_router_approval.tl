@@ -240,6 +240,7 @@ func tinyman_swap(pool_address: bytes, mode: bytes, asset_in_id: int, asset_out_
                 Accounts[0]: pool_address
                 Assets[0]: asset_in_id
                 Assets[1]: asset_out_id
+                Note: Txn.Note
             end
         end
     else:
@@ -260,6 +261,7 @@ func tinyman_swap(pool_address: bytes, mode: bytes, asset_in_id: int, asset_out_
                 Accounts[0]: pool_address
                 Assets[0]: asset_in_id
                 Assets[1]: asset_out_id
+                Note: Txn.Note
             end
         end
     end
