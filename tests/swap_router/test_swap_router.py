@@ -213,6 +213,7 @@ class SwapTestCase(SwapRouterTestCase):
                 "input_asset_id": 0,
                 "intermediary_asset_id": self.asset_b_id,
                 "output_asset_id": self.asset_c_id,
+                "note": "test note"
             },
             {
                 "input_asset_id": self.asset_a_id,
@@ -233,6 +234,7 @@ class SwapTestCase(SwapRouterTestCase):
                 input_asset_id = test_case["input_asset_id"]
                 intermediary_asset_id = test_case["intermediary_asset_id"]
                 output_asset_id = test_case["output_asset_id"]
+                note = test_case.get("note")
 
                 pool_1_asset_1_id, pool_1_asset_2_id = sorted([input_asset_id, intermediary_asset_id], reverse=True)
                 pool_2_asset_1_id, pool_2_asset_2_id = sorted([intermediary_asset_id, output_asset_id], reverse=True)
@@ -290,6 +292,7 @@ class SwapTestCase(SwapRouterTestCase):
                         index=SWAP_ROUTER_APP_ID,
                         app_args=["swap", "fixed-input", minimum_output],
                         accounts=[pool_1_address, pool_2_address],
+                        note=note,
                         foreign_apps=[AMM_APPLICATION_ID],
                         foreign_assets=[input_asset_id, intermediary_asset_id, output_asset_id],
                     )
@@ -358,7 +361,7 @@ class SwapTestCase(SwapRouterTestCase):
                         b'lv': ANY,
                         b'snd': decode_address(SWAP_ROUTER_ADDRESS),
                         b'type': b'appl'
-                    }
+                    } | ({b'note': note.encode()} if note else {})
                 )
 
                 swap_1_app_call_inner_transactions = swap_1_app_call[b'dt'][b'itx']
@@ -431,7 +434,7 @@ class SwapTestCase(SwapRouterTestCase):
                         b'lv': ANY,
                         b'snd': decode_address(SWAP_ROUTER_ADDRESS),
                         b'type': b'appl'
-                    }
+                    } | ({b'note': note.encode()} if note else {})
                 )
 
                 swap_2_app_call_inner_transactions = swap_2_app_call[b'dt'][b'itx']
@@ -500,6 +503,7 @@ class SwapTestCase(SwapRouterTestCase):
                 "input_asset_id": 0,
                 "intermediary_asset_id": self.asset_b_id,
                 "output_asset_id": self.asset_c_id,
+                "note": "test note"
             },
             {
                 "input_asset_id": self.asset_a_id,
@@ -520,6 +524,7 @@ class SwapTestCase(SwapRouterTestCase):
                 input_asset_id = test_case["input_asset_id"]
                 intermediary_asset_id = test_case["intermediary_asset_id"]
                 output_asset_id = test_case["output_asset_id"]
+                note = test_case.get("note")
 
                 pool_1_asset_1_id, pool_1_asset_2_id = sorted([input_asset_id, intermediary_asset_id], reverse=True)
                 pool_2_asset_1_id, pool_2_asset_2_id = sorted([intermediary_asset_id, output_asset_id], reverse=True)
@@ -579,6 +584,7 @@ class SwapTestCase(SwapRouterTestCase):
                         accounts=[pool_1_address, pool_2_address],
                         foreign_apps=[AMM_APPLICATION_ID],
                         foreign_assets=[input_asset_id, intermediary_asset_id, output_asset_id],
+                        note=note,
                     )
                 ]
                 txn_group[1].fee = 1000 + 8000
@@ -645,7 +651,7 @@ class SwapTestCase(SwapRouterTestCase):
                         b'lv': ANY,
                         b'snd': decode_address(SWAP_ROUTER_ADDRESS),
                         b'type': b'appl'
-                    }
+                    } | ({b'note': note.encode()} if note else {})
                 )
 
                 swap_1_app_call_inner_transactions = swap_1_app_call[b'dt'][b'itx']
@@ -718,7 +724,7 @@ class SwapTestCase(SwapRouterTestCase):
                         b'lv': ANY,
                         b'snd': decode_address(SWAP_ROUTER_ADDRESS),
                         b'type': b'appl'
-                    }
+                    } | ({b'note': note.encode()} if note else {})
                 )
 
                 swap_2_app_call_inner_transactions = swap_2_app_call[b'dt'][b'itx']
