@@ -137,6 +137,3 @@ dmypy.json
 *.teal.tok
 
 !contracts/swap_router/build/
-
-# TODO: Ignore AMM Contracts for now and load them using asc.json.
-/amm_contracts

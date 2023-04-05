@@ -1,9 +1,16 @@
-from algojig import TealishProgram
+import requests
+from algojig import TealProgram
 from algosdk.logic import get_application_address
 
-amm_pool_template = TealishProgram('amm_contracts/pool_template.tl')
-amm_approval_program = TealishProgram('amm_contracts/amm_approval.tl')
-amm_clear_state_program = TealishProgram('amm_contracts/amm_clear_state.tl')
+# Read Teal from AMM repo
+amm_pool_template = TealProgram(teal=requests.get("https://github.com/tinymanorg/tinyman-amm-contracts-v2/blob/main/contracts/build/pool_template.teal?raw=True").text)
+amm_approval_program = TealProgram(teal=requests.get("https://github.com/tinymanorg/tinyman-amm-contracts-v2/blob/main/contracts/build/amm_approval.teal?raw=True").text)
+amm_clear_state_program = TealProgram(teal=requests.get("https://github.com/tinymanorg/tinyman-amm-contracts-v2/blob/main/contracts/build/amm_clear_state.teal?raw=True").text)
+
+# Read Tealish from AMM repo if you need.
+# amm_pool_template = TealishProgram(tealish=requests.get("https://github.com/tinymanorg/tinyman-amm-contracts-v2/blob/main/contracts/pool_template.tl?raw=True").text)
+# amm_approval_program = TealishProgram(tealish=requests.get("https://github.com/tinymanorg/tinyman-amm-contracts-v2/blob/main/contracts/amm_approval.tl?raw=True").text)
+# amm_clear_state_program = TealishProgram(tealish=requests.get("https://github.com/tinymanorg/tinyman-amm-contracts-v2/blob/main/contracts/amm_clear_state.tl?raw=True").text)
 
 METHOD_BOOTSTRAP = "bootstrap"
 METHOD_ADD_LIQUIDITY = "add_liquidity"
