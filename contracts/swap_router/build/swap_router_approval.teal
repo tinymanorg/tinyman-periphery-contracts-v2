@@ -1,0 +1,1040 @@
+#pragma version 7
+//tealish version git+https://github.com/Hipo/tealish.git@483cb7a30912747814c5ee0ee0dd7a7b1684c5f5
+
+// if !Txn.ApplicationID:
+  txn ApplicationID
+  !
+  bz l0_end
+  // then:
+    // Create App
+    // app_global_put("tinyman_app_id", Txn.Applications[1])
+    pushbytes "tinyman_app_id"
+    txna Applications 1
+    app_global_put
+    // app_global_put("manager", Txn.Sender)
+    pushbytes "manager"
+    txn Sender
+    app_global_put
+    // app_global_put("extra_collector", Txn.Sender)
+    pushbytes "extra_collector"
+    txn Sender
+    app_global_put
+    // exit(1)
+    pushint 1
+    return
+  l0_end: // end
+
+// switch Txn.OnCompletion:
+txn OnCompletion
+pushint 0 // NoOp
+==
+bnz main
+txn OnCompletion
+pushint 1 // OptIn
+==
+bnz fail
+txn OnCompletion
+pushint 2 // CloseOut
+==
+bnz fail
+txn OnCompletion
+pushint 4 // UpdateApplication
+==
+bnz fail
+txn OnCompletion
+pushint 5 // DeleteApplication
+==
+bnz fail
+err // unexpected value
+
+// block fail
+fail:
+  // exit(0)
+  pushint 0
+  return
+
+// block main
+main:
+  // switch Txn.ApplicationArgs[0]:
+  txna ApplicationArgs 0
+  pushbytes "swap"
+  ==
+  bnz main__swap
+  txna ApplicationArgs 0
+  pushbytes "asset_opt_in"
+  ==
+  bnz main__asset_opt_in
+  txna ApplicationArgs 0
+  pushbytes "set_manager"
+  ==
+  bnz main__set_manager
+  txna ApplicationArgs 0
+  pushbytes "set_extra_collector"
+  ==
+  bnz main__set_extra_collector
+  txna ApplicationArgs 0
+  pushbytes "claim_extra"
+  ==
+  bnz main__claim_extra
+  err // unexpected value
+  
+  // block asset_opt_in
+  main__asset_opt_in:
+    // Required Algo to cover minimum balance increase must be supplied.
+    // It is not checked explicitly.
+    // Using extra balance is allowed.
+    // int asset_count = Txn.NumAssets [slot 0]
+    txn NumAssets
+    store 0 // asset_count
+    // for i in 0:asset_count:
+      pushint 0
+      store 1 // i
+      l1_for:
+      load 1 // i
+      load 0 // asset_count
+      ==
+      bnz l1_end
+      // opt_in_to_asset_if_needed(Txn.Assets[i])
+      load 1 // i
+      txnas Assets
+      callsub __func__opt_in_to_asset_if_needed
+      load 1 // i
+      pushint 1
+      +
+      store 1 // i
+      b l1_for
+      l1_end: // end
+    // exit(1)
+    pushint 1
+    return
+  
+  // block swap
+  main__swap:
+    // Assert that Txn.Applications[1] is Tinyman AMM V2
+    // assert(app_global_get("tinyman_app_id") == Txn.Applications[1])
+    pushbytes "tinyman_app_id"
+    app_global_get
+    txna Applications 1
+    ==
+    assert
+    
+    // bytes user_address = Txn.Sender [slot 0]
+    txn Sender
+    store 0 // user_address
+    // bytes pool_1_address = Txn.Accounts[1] [slot 1]
+    txna Accounts 1
+    store 1 // pool_1_address
+    // bytes pool_2_address = Txn.Accounts[2] [slot 2]
+    txna Accounts 2
+    store 2 // pool_2_address
+    
+    // Swap Route:input_asset_id -> intermediary_asset_id -> output_asset_id
+    // int input_asset_id = Txn.Assets[0] [slot 3]
+    txna Assets 0
+    store 3 // input_asset_id
+    // int intermediary_asset_id = Txn.Assets[1] [slot 4]
+    txna Assets 1
+    store 4 // intermediary_asset_id
+    // int output_asset_id = Txn.Assets[2] [slot 5]
+    txna Assets 2
+    store 5 // output_asset_id
+    
+    // Fail if the application is not opted in to assets
+    // int is_opted_in [slot 6]
+    // if intermediary_asset_id:
+      load 4 // intermediary_asset_id
+      bz l2_end
+      // then:
+        // is_opted_in, _ = asset_holding_get(AssetBalance, Global.CurrentApplicationAddress, intermediary_asset_id)
+        global CurrentApplicationAddress
+        load 4 // intermediary_asset_id
+        asset_holding_get AssetBalance
+        store 6 // is_opted_in
+        pop // discarding value for _
+        // assert(is_opted_in)
+        load 6 // is_opted_in
+        assert
+      l2_end: // end
+    // if output_asset_id:
+      load 5 // output_asset_id
+      bz l3_end
+      // then:
+        // is_opted_in, _ = asset_holding_get(AssetBalance, Global.CurrentApplicationAddress, output_asset_id)
+        global CurrentApplicationAddress
+        load 5 // output_asset_id
+        asset_holding_get AssetBalance
+        store 6 // is_opted_in
+        pop // discarding value for _
+        // assert(is_opted_in)
+        load 6 // is_opted_in
+        assert
+      l3_end: // end
+    
+    // Check input transaction
+    // int input_amount [slot 7]
+    // assert(Txn.GroupIndex)
+    txn GroupIndex
+    assert
+    // int input_txn_index = Txn.GroupIndex - 1 [slot 8]
+    txn GroupIndex
+    pushint 1
+    -
+    store 8 // input_txn_index
+    // assert(Gtxn[input_txn_index].Sender == user_address)
+    load 8 // input_txn_index
+    gtxns Sender
+    load 0 // user_address
+    ==
+    assert
+    
+    // if Gtxn[input_txn_index].TypeEnum == Pay:
+      load 8 // input_txn_index
+      gtxns TypeEnum
+      pushint 1 // Pay
+      ==
+      bz l4_elif_0
+      // then:
+        // assert(Gtxn[input_txn_index].Receiver == Global.CurrentApplicationAddress)
+        load 8 // input_txn_index
+        gtxns Receiver
+        global CurrentApplicationAddress
+        ==
+        assert
+        // assert(!input_asset_id)
+        load 3 // input_asset_id
+        !
+        assert
+        // input_amount = Gtxn[input_txn_index].Amount
+        load 8 // input_txn_index
+        gtxns Amount
+        store 7 // input_amount
+      b l4_end
+      l4_elif_0:
+      // elif Gtxn[input_txn_index].TypeEnum == Axfer:
+      load 8 // input_txn_index
+      gtxns TypeEnum
+      pushint 4 // Axfer
+      ==
+      bz l4_else
+        // assert(Gtxn[input_txn_index].AssetReceiver == Global.CurrentApplicationAddress)
+        load 8 // input_txn_index
+        gtxns AssetReceiver
+        global CurrentApplicationAddress
+        ==
+        assert
+        // assert(input_asset_id == Gtxn[input_txn_index].XferAsset)
+        load 3 // input_asset_id
+        load 8 // input_txn_index
+        gtxns XferAsset
+        ==
+        assert
+        // input_amount = Gtxn[input_txn_index].AssetAmount
+        load 8 // input_txn_index
+        gtxns AssetAmount
+        store 7 // input_amount
+      b l4_end
+      l4_else:
+      // else:
+        // error()
+        err
+      l4_end: // end
+    // assert(input_amount)
+    load 7 // input_amount
+    assert
+    
+    // Swap Modes
+    // switch Txn.ApplicationArgs[1]:
+    txna ApplicationArgs 1
+    pushbytes "fixed-input"
+    ==
+    bnz main__swap__fixed_input
+    txna ApplicationArgs 1
+    pushbytes "fixed-output"
+    ==
+    bnz main__swap__fixed_output
+    err // unexpected value
+    
+    // block fixed_input
+    main__swap__fixed_input:
+      // int minimum_output_amount = btoi(Txn.ApplicationArgs[2]) [slot 9]
+      txna ApplicationArgs 2
+      btoi
+      store 9 // minimum_output_amount
+      // int swap_1_input_amount = input_amount [slot 10]
+      load 7 // input_amount
+      store 10 // swap_1_input_amount
+      
+      // Swap 1
+      // Minimum intermediary output amount is 1.
+      // int swap_1_output_amount [slot 11]
+      // swap_1_output_amount, _ = tinyman_swap(pool_1_address, "fixed-input", input_asset_id, intermediary_asset_id, swap_1_input_amount, 1)
+      load 1 // pool_1_address
+      pushbytes "fixed-input"
+      load 3 // input_asset_id
+      load 4 // intermediary_asset_id
+      load 10 // swap_1_input_amount
+      pushint 1
+      callsub __func__tinyman_swap
+      store 11 // swap_1_output_amount
+      pop // discarding value for _
+      // assert(swap_1_output_amount)
+      load 11 // swap_1_output_amount
+      assert
+      
+      // Swap 2
+      // int swap_2_output_amount [slot 12]
+      // swap_2_output_amount, _ = tinyman_swap(pool_2_address, "fixed-input", intermediary_asset_id, output_asset_id, swap_1_output_amount, minimum_output_amount)
+      load 2 // pool_2_address
+      pushbytes "fixed-input"
+      load 4 // intermediary_asset_id
+      load 5 // output_asset_id
+      load 11 // swap_1_output_amount
+      load 9 // minimum_output_amount
+      callsub __func__tinyman_swap
+      store 12 // swap_2_output_amount
+      pop // discarding value for _
+      // assert(swap_2_output_amount >= minimum_output_amount)
+      load 12 // swap_2_output_amount
+      load 9 // minimum_output_amount
+      >=
+      assert
+      
+      // Transfer output to user
+      // transfer(output_asset_id, swap_2_output_amount, Global.CurrentApplicationAddress, user_address)
+      load 5 // output_asset_id
+      load 12 // swap_2_output_amount
+      global CurrentApplicationAddress
+      load 0 // user_address
+      callsub __func__transfer
+      
+      // log(concat(concat(concat(concat(method("swap(uint64,uint64,uint64,uint64)"), itob(input_asset_id)), itob(output_asset_id)), itob(input_amount)), itob(swap_2_output_amount)))
+      method "swap(uint64,uint64,uint64,uint64)"
+      load 3 // input_asset_id
+      itob
+      concat
+      load 5 // output_asset_id
+      itob
+      concat
+      load 7 // input_amount
+      itob
+      concat
+      load 12 // swap_2_output_amount
+      itob
+      concat
+      log
+      // exit(1)
+      pushint 1
+      return
+    
+    // block fixed_output
+    main__swap__fixed_output:
+      // int output_amount = btoi(Txn.ApplicationArgs[2]) [slot 9]
+      txna ApplicationArgs 2
+      btoi
+      store 9 // output_amount
+      
+      // Get reserves from the pool local state.
+      // int swap_1_input_supply = get_reserves(pool_1_address, input_asset_id) [slot 10]
+      load 1 // pool_1_address
+      load 3 // input_asset_id
+      callsub __func__get_reserves
+      store 10 // swap_1_input_supply
+      // int swap_1_output_supply = get_reserves(pool_1_address, intermediary_asset_id) [slot 11]
+      load 1 // pool_1_address
+      load 4 // intermediary_asset_id
+      callsub __func__get_reserves
+      store 11 // swap_1_output_supply
+      // int swap_2_input_supply = get_reserves(pool_2_address, intermediary_asset_id) [slot 12]
+      load 2 // pool_2_address
+      load 4 // intermediary_asset_id
+      callsub __func__get_reserves
+      store 12 // swap_2_input_supply
+      // int swap_2_output_supply = get_reserves(pool_2_address, output_asset_id) [slot 13]
+      load 2 // pool_2_address
+      load 5 // output_asset_id
+      callsub __func__get_reserves
+      store 13 // swap_2_output_supply
+      
+      // Temporary variables
+      // int swap_amount [slot 14]
+      // int total_fee_amount [slot 15]
+      // int change_amount [slot 16]
+      
+      // Calculate required swap 2 input amount
+      // swap_amount = calculate_fixed_output_swap(swap_2_input_supply, swap_2_output_supply, output_amount)
+      load 12 // swap_2_input_supply
+      load 13 // swap_2_output_supply
+      load 9 // output_amount
+      callsub __func__calculate_fixed_output_swap
+      store 14 // swap_amount
+      // total_fee_amount = calculate_fixed_output_fee_amounts(pool_2_address, swap_amount)
+      load 2 // pool_2_address
+      load 14 // swap_amount
+      callsub __func__calculate_fixed_output_fee_amounts
+      store 15 // total_fee_amount
+      // int swap_2_required_input_amount = swap_amount + total_fee_amount [slot 17]
+      load 14 // swap_amount
+      load 15 // total_fee_amount
+      +
+      store 17 // swap_2_required_input_amount
+      
+      // Calculate required swap 1 input amount
+      // swap_amount = calculate_fixed_output_swap(swap_1_input_supply, swap_1_output_supply, swap_2_required_input_amount)
+      load 10 // swap_1_input_supply
+      load 11 // swap_1_output_supply
+      load 17 // swap_2_required_input_amount
+      callsub __func__calculate_fixed_output_swap
+      store 14 // swap_amount
+      // total_fee_amount = calculate_fixed_output_fee_amounts(pool_1_address, swap_amount)
+      load 1 // pool_1_address
+      load 14 // swap_amount
+      callsub __func__calculate_fixed_output_fee_amounts
+      store 15 // total_fee_amount
+      // int swap_1_required_input_amount = swap_amount + total_fee_amount [slot 18]
+      load 14 // swap_amount
+      load 15 // total_fee_amount
+      +
+      store 18 // swap_1_required_input_amount
+      
+      // Swap 1
+      // Exact input amount is calculated, fixed output swap won't generate a change transaction.
+      // int swap_1_output_amount [slot 19]
+      // swap_1_output_amount, change_amount = tinyman_swap(pool_1_address, "fixed-output", input_asset_id, intermediary_asset_id, swap_1_required_input_amount, swap_2_required_input_amount)
+      load 1 // pool_1_address
+      pushbytes "fixed-output"
+      load 3 // input_asset_id
+      load 4 // intermediary_asset_id
+      load 18 // swap_1_required_input_amount
+      load 17 // swap_2_required_input_amount
+      callsub __func__tinyman_swap
+      store 19 // swap_1_output_amount
+      store 16 // change_amount
+      // assert(swap_1_output_amount == swap_2_required_input_amount)
+      load 19 // swap_1_output_amount
+      load 17 // swap_2_required_input_amount
+      ==
+      assert
+      // assert(!change_amount)
+      load 16 // change_amount
+      !
+      assert
+      
+      // Swap 2
+      // Exact input amount is calculated, fixed output swap won't generate a change transaction.
+      // int swap_2_output_amount [slot 20]
+      // swap_2_output_amount, change_amount = tinyman_swap(pool_2_address, "fixed-output", intermediary_asset_id, output_asset_id, swap_2_required_input_amount, output_amount)
+      load 2 // pool_2_address
+      pushbytes "fixed-output"
+      load 4 // intermediary_asset_id
+      load 5 // output_asset_id
+      load 17 // swap_2_required_input_amount
+      load 9 // output_amount
+      callsub __func__tinyman_swap
+      store 20 // swap_2_output_amount
+      store 16 // change_amount
+      // assert(swap_2_output_amount == output_amount)
+      load 20 // swap_2_output_amount
+      load 9 // output_amount
+      ==
+      assert
+      // assert(!change_amount)
+      load 16 // change_amount
+      !
+      assert
+      
+      // Transfer change to user if exists
+      // int change = input_amount - swap_1_required_input_amount [slot 21]
+      load 7 // input_amount
+      load 18 // swap_1_required_input_amount
+      -
+      store 21 // change
+      // if change:
+        load 21 // change
+        bz l5_end
+        // then:
+          // transfer(input_asset_id, change, Global.CurrentApplicationAddress, user_address)
+          load 3 // input_asset_id
+          load 21 // change
+          global CurrentApplicationAddress
+          load 0 // user_address
+          callsub __func__transfer
+        l5_end: // end
+      
+      // Transfer output to user
+      // transfer(output_asset_id, output_amount, Global.CurrentApplicationAddress, user_address)
+      load 5 // output_asset_id
+      load 9 // output_amount
+      global CurrentApplicationAddress
+      load 0 // user_address
+      callsub __func__transfer
+      
+      // log(concat(concat(concat(concat(method("swap(uint64,uint64,uint64,uint64)"), itob(input_asset_id)), itob(output_asset_id)), itob(input_amount - change)), itob(swap_2_output_amount)))
+      method "swap(uint64,uint64,uint64,uint64)"
+      load 3 // input_asset_id
+      itob
+      concat
+      load 5 // output_asset_id
+      itob
+      concat
+      load 7 // input_amount
+      load 21 // change
+      -
+      itob
+      concat
+      load 20 // swap_2_output_amount
+      itob
+      concat
+      log
+      // exit(1)
+      pushint 1
+      return
+    // exit(0)
+    pushint 0
+    return
+  
+  // block set_manager
+  main__set_manager:
+    // Set a new manager, only manager can call this method
+    // Txn: AppCall from manager
+    
+    // assert(Txn.Sender == app_global_get("manager"))
+    txn Sender
+    pushbytes "manager"
+    app_global_get
+    ==
+    assert
+    
+    // State updates
+    // app_global_put("manager", Txn.Accounts[1])
+    pushbytes "manager"
+    txna Accounts 1
+    app_global_put
+    
+    // exit(1)
+    pushint 1
+    return
+  
+  // block set_extra_collector
+  main__set_extra_collector:
+    // Set a new extra collector, only manager can call this method
+    // Txn: AppCall from manager
+    
+    // assert(Txn.Sender == app_global_get("manager"))
+    txn Sender
+    pushbytes "manager"
+    app_global_get
+    ==
+    assert
+    
+    // State updates
+    // app_global_put("extra_collector", Txn.Accounts[1])
+    pushbytes "extra_collector"
+    txna Accounts 1
+    app_global_put
+    
+    // exit(1)
+    pushint 1
+    return
+  
+  // block claim_extra
+  main__claim_extra:
+    // Transfer any extra (donations) to the extra_collector
+    
+    // It must be the first txn of the group.
+    // assert(Txn.GroupIndex == 0)
+    txn GroupIndex
+    pushint 0
+    ==
+    assert
+    
+    // int asset_amount [slot 0]
+    // int extra_asset_id [slot 1]
+    // int asset_count = Txn.NumAssets [slot 2]
+    txn NumAssets
+    store 2 // asset_count
+    
+    // for i in 0:asset_count:
+      pushint 0
+      store 3 // i
+      l6_for:
+      load 3 // i
+      load 2 // asset_count
+      ==
+      bnz l6_end
+      // extra_asset_id = Txn.Assets[i]
+      load 3 // i
+      txnas Assets
+      store 1 // extra_asset_id
+      // asset_amount = get_balance(Global.CurrentApplicationAddress, extra_asset_id)
+      global CurrentApplicationAddress
+      load 1 // extra_asset_id
+      callsub __func__get_balance
+      store 0 // asset_amount
+      // if asset_amount:
+        load 0 // asset_amount
+        bz l7_end
+        // then:
+          // transfer(extra_asset_id, asset_amount, Global.CurrentApplicationAddress, app_global_get("extra_collector"))
+          load 1 // extra_asset_id
+          load 0 // asset_amount
+          global CurrentApplicationAddress
+          pushbytes "extra_collector"
+          app_global_get
+          callsub __func__transfer
+        l7_end: // end
+      load 3 // i
+      pushint 1
+      +
+      store 3 // i
+      b l6_for
+      l6_end: // end
+    // exit(1)
+    pushint 1
+    return
+  // exit(0)
+  pushint 0
+  return
+
+// func tinyman_swap(pool_address: bytes, mode: bytes, asset_in_id: int, asset_out_id: int, asset_input_amount: int, minimum_output_amount: int) int, int:
+__func__tinyman_swap:
+store 22 // minimum_output_amount
+store 23 // asset_input_amount
+store 24 // asset_out_id
+store 25 // asset_in_id
+store 26 // mode
+store 27 // pool_address
+// int initial_input_balance = get_balance(Global.CurrentApplicationAddress, asset_in_id) [slot 28]
+global CurrentApplicationAddress
+load 25 // asset_in_id
+callsub __func__get_balance
+store 28 // initial_input_balance
+// int initial_output_balance = get_balance(Global.CurrentApplicationAddress, asset_out_id) [slot 29]
+global CurrentApplicationAddress
+load 24 // asset_out_id
+callsub __func__get_balance
+store 29 // initial_output_balance
+
+// if asset_in_id:
+  load 25 // asset_in_id
+  bz l8_else
+  // then:
+    // inner_group:
+      itxn_begin
+      // inner_txn:
+        // TypeEnum: Axfer
+        pushint 4 // Axfer
+        itxn_field TypeEnum
+        // Fee: 0
+        pushint 0
+        itxn_field Fee
+        // AssetReceiver: pool_address
+        load 27 // pool_address
+        itxn_field AssetReceiver
+        // AssetAmount: asset_input_amount
+        load 23 // asset_input_amount
+        itxn_field AssetAmount
+        // XferAsset: asset_in_id
+        load 25 // asset_in_id
+        itxn_field XferAsset
+      // end inner_txn
+      // inner_txn:
+      itxn_next
+        // TypeEnum: Appl
+        pushint 6 // Appl
+        itxn_field TypeEnum
+        // Fee: 0
+        pushint 0
+        itxn_field Fee
+        // ApplicationID: app_global_get("tinyman_app_id")
+        pushbytes "tinyman_app_id"
+        app_global_get
+        itxn_field ApplicationID
+        // ApplicationArgs[0]: "swap"
+        pushbytes "swap"
+        itxn_field ApplicationArgs
+        // ApplicationArgs[1]: mode
+        load 26 // mode
+        itxn_field ApplicationArgs
+        // ApplicationArgs[2]: itob(minimum_output_amount)
+        load 22 // minimum_output_amount
+        itob
+        itxn_field ApplicationArgs
+        // Accounts[0]: pool_address
+        load 27 // pool_address
+        itxn_field Accounts
+        // Assets[0]: asset_in_id
+        load 25 // asset_in_id
+        itxn_field Assets
+        // Assets[1]: asset_out_id
+        load 24 // asset_out_id
+        itxn_field Assets
+        // Note: Txn.Note
+        txn Note
+        itxn_field Note
+      // end inner_txn
+      itxn_submit
+    // end inner_group
+  b l8_end
+  l8_else:
+  // else:
+    // inner_group:
+      itxn_begin
+      // inner_txn:
+        // TypeEnum: Pay
+        pushint 1 // Pay
+        itxn_field TypeEnum
+        // Fee: 0
+        pushint 0
+        itxn_field Fee
+        // Receiver: pool_address
+        load 27 // pool_address
+        itxn_field Receiver
+        // Amount: asset_input_amount
+        load 23 // asset_input_amount
+        itxn_field Amount
+      // end inner_txn
+      // inner_txn:
+      itxn_next
+        // TypeEnum: Appl
+        pushint 6 // Appl
+        itxn_field TypeEnum
+        // Fee: 0
+        pushint 0
+        itxn_field Fee
+        // ApplicationID: app_global_get("tinyman_app_id")
+        pushbytes "tinyman_app_id"
+        app_global_get
+        itxn_field ApplicationID
+        // ApplicationArgs[0]: "swap"
+        pushbytes "swap"
+        itxn_field ApplicationArgs
+        // ApplicationArgs[1]: mode
+        load 26 // mode
+        itxn_field ApplicationArgs
+        // ApplicationArgs[2]: itob(minimum_output_amount)
+        load 22 // minimum_output_amount
+        itob
+        itxn_field ApplicationArgs
+        // Accounts[0]: pool_address
+        load 27 // pool_address
+        itxn_field Accounts
+        // Assets[0]: asset_in_id
+        load 25 // asset_in_id
+        itxn_field Assets
+        // Assets[1]: asset_out_id
+        load 24 // asset_out_id
+        itxn_field Assets
+        // Note: Txn.Note
+        txn Note
+        itxn_field Note
+      // end inner_txn
+      itxn_submit
+    // end inner_group
+  l8_end: // end
+
+// int final_input_balance = get_balance(Global.CurrentApplicationAddress, asset_in_id) [slot 30]
+global CurrentApplicationAddress
+load 25 // asset_in_id
+callsub __func__get_balance
+store 30 // final_input_balance
+// int final_output_balance = get_balance(Global.CurrentApplicationAddress, asset_out_id) [slot 31]
+global CurrentApplicationAddress
+load 24 // asset_out_id
+callsub __func__get_balance
+store 31 // final_output_balance
+// int output_amount = final_output_balance - initial_output_balance [slot 32]
+load 31 // final_output_balance
+load 29 // initial_output_balance
+-
+store 32 // output_amount
+// int change_amount = final_input_balance - (initial_input_balance - asset_input_amount) [slot 33]
+load 30 // final_input_balance
+load 28 // initial_input_balance
+load 23 // asset_input_amount
+-
+-
+store 33 // change_amount
+// return output_amount, change_amount
+load 33 // change_amount
+load 32 // output_amount
+retsub
+
+// func get_reserves(pool_address: bytes, asset_id: int) int:
+__func__get_reserves:
+store 34 // asset_id
+store 35 // pool_address
+// int exists [slot 36]
+// int asset_1_id [slot 37]
+// int asset_2_id [slot 38]
+// int reserves [slot 39]
+// int tinyman_app_id = app_global_get("tinyman_app_id") [slot 40]
+pushbytes "tinyman_app_id"
+app_global_get
+store 40 // tinyman_app_id
+
+// exists, asset_2_id = app_local_get_ex(pool_address, tinyman_app_id, "asset_2_id")
+load 35 // pool_address
+load 40 // tinyman_app_id
+pushbytes "asset_2_id"
+app_local_get_ex
+store 36 // exists
+store 38 // asset_2_id
+// assert(exists)
+load 36 // exists
+assert
+// if asset_id == asset_2_id:
+  load 34 // asset_id
+  load 38 // asset_2_id
+  ==
+  bz l9_end
+  // then:
+    // _, reserves = app_local_get_ex(pool_address, tinyman_app_id, "asset_2_reserves")
+    load 35 // pool_address
+    load 40 // tinyman_app_id
+    pushbytes "asset_2_reserves"
+    app_local_get_ex
+    pop // discarding value for _
+    store 39 // reserves
+    // return reserves
+    load 39 // reserves
+    retsub
+  l9_end: // end
+
+// _, asset_1_id = app_local_get_ex(pool_address, tinyman_app_id, "asset_1_id")
+load 35 // pool_address
+load 40 // tinyman_app_id
+pushbytes "asset_1_id"
+app_local_get_ex
+pop // discarding value for _
+store 37 // asset_1_id
+// if asset_id == asset_1_id:
+  load 34 // asset_id
+  load 37 // asset_1_id
+  ==
+  bz l10_end
+  // then:
+    // _, reserves = app_local_get_ex(pool_address, tinyman_app_id, "asset_1_reserves")
+    load 35 // pool_address
+    load 40 // tinyman_app_id
+    pushbytes "asset_1_reserves"
+    app_local_get_ex
+    pop // discarding value for _
+    store 39 // reserves
+    // return reserves
+    load 39 // reserves
+    retsub
+  l10_end: // end
+
+// error()
+err
+// return
+retsub
+
+// func opt_in_to_asset_if_needed(asset_id: int):
+__func__opt_in_to_asset_if_needed:
+store 41 // asset_id
+// if asset_id:
+  load 41 // asset_id
+  bz l11_end
+  // then:
+    // int is_opted_in [slot 42]
+    // is_opted_in, _ = asset_holding_get(AssetBalance, Global.CurrentApplicationAddress, asset_id)
+    global CurrentApplicationAddress
+    load 41 // asset_id
+    asset_holding_get AssetBalance
+    store 42 // is_opted_in
+    pop // discarding value for _
+    
+    // if is_opted_in == 0:
+      load 42 // is_opted_in
+      pushint 0
+      ==
+      bz l12_end
+      // then:
+        // transfer(asset_id, 0, Global.CurrentApplicationAddress, Global.CurrentApplicationAddress)
+        load 41 // asset_id
+        pushint 0
+        global CurrentApplicationAddress
+        global CurrentApplicationAddress
+        callsub __func__transfer
+      l12_end: // end
+  l11_end: // end
+// return
+retsub
+
+// func get_balance(account_address: bytes, asset_id: int) int:
+__func__get_balance:
+store 43 // asset_id
+store 44 // account_address
+// This function is copied from Tinyman AMM Contracts V2 with a minor change.
+// account_idx is updated as account_address to increase reability.
+// Ref: https://github.com/tinymanorg/tinyman-amm-contracts-v2/blob/main/contracts/amm_approval.tl#L1136
+
+// int balance = 0 [slot 45]
+pushint 0
+store 45 // balance
+// if !asset_id:
+  load 43 // asset_id
+  !
+  bz l13_else
+  // then:
+    // balance = balance(account_address) - min_balance(account_address)
+    load 44 // account_address
+    balance
+    load 44 // account_address
+    min_balance
+    -
+    store 45 // balance
+  b l13_end
+  l13_else:
+  // else:
+    // _, balance = asset_holding_get(AssetBalance, account_address, asset_id)
+    load 44 // account_address
+    load 43 // asset_id
+    asset_holding_get AssetBalance
+    pop // discarding value for _
+    store 45 // balance
+  l13_end: // end
+// return balance
+load 45 // balance
+retsub
+
+// func calculate_fixed_output_swap(input_supply: int, output_supply: int, output_amount: int) int:
+__func__calculate_fixed_output_swap:
+store 46 // output_amount
+store 47 // output_supply
+store 48 // input_supply
+// This function is copied from Tinyman AMM Contracts V2.
+// https://github.com/tinymanorg/tinyman-amm-contracts-v2/blob/main/contracts/amm_approval.tl#L1126
+
+// Calculates the input amount for a fixed-output swap ignoring fees
+// k = input_supply * output_supply
+// swap_amount = (k / (output_supply - asset_output_amount)) - input_supply
+// bytes k = itob(input_supply) b* itob(output_supply) [slot 49]
+load 48 // input_supply
+itob
+load 47 // output_supply
+itob
+b*
+store 49 // k
+// +1 for Round Up
+// int swap_amount = (btoi((k b/ itob(output_supply - output_amount))) + 1) - input_supply [slot 50]
+load 49 // k
+load 47 // output_supply
+load 46 // output_amount
+-
+itob
+b/
+btoi
+pushint 1
++
+load 48 // input_supply
+-
+store 50 // swap_amount
+// return swap_amount
+load 50 // swap_amount
+retsub
+
+// func calculate_fixed_output_fee_amounts(pool_address: bytes, swap_amount: int) int:
+__func__calculate_fixed_output_fee_amounts:
+store 51 // swap_amount
+store 52 // pool_address
+// int exists [slot 53]
+// int total_fee_share [slot 54]
+// int tinyman_app_id = app_global_get("tinyman_app_id") [slot 55]
+pushbytes "tinyman_app_id"
+app_global_get
+store 55 // tinyman_app_id
+
+// exists, total_fee_share = app_local_get_ex(pool_address, tinyman_app_id, "total_fee_share")
+load 52 // pool_address
+load 55 // tinyman_app_id
+pushbytes "total_fee_share"
+app_local_get_ex
+store 53 // exists
+store 54 // total_fee_share
+// assert(exists)
+load 53 // exists
+assert
+
+// int input_amount = (swap_amount * 10000) / (10000 - total_fee_share) [slot 56]
+load 51 // swap_amount
+pushint 10000
+*
+pushint 10000
+load 54 // total_fee_share
+-
+/
+store 56 // input_amount
+// int total_fee = input_amount - swap_amount [slot 57]
+load 56 // input_amount
+load 51 // swap_amount
+-
+store 57 // total_fee
+// return total_fee
+load 57 // total_fee
+retsub
+
+// func transfer(asset_id: int, amount: int, sender: bytes, receiver: bytes):
+__func__transfer:
+store 58 // receiver
+store 59 // sender
+store 60 // amount
+store 61 // asset_id
+// This function is copied from Tinyman AMM Contracts V2.
+// "asset_id == 0" is updated as "!asset_id" for budget optimization.
+// https://github.com/tinymanorg/tinyman-amm-contracts-v2/blob/main/contracts/amm_approval.tl#L1146
+
+// if !asset_id:
+  load 61 // asset_id
+  !
+  bz l14_else
+  // then:
+    // inner_txn:
+    itxn_begin
+      // TypeEnum: Pay
+      pushint 1 // Pay
+      itxn_field TypeEnum
+      // Sender: sender
+      load 59 // sender
+      itxn_field Sender
+      // Receiver: receiver
+      load 58 // receiver
+      itxn_field Receiver
+      // Amount: amount
+      load 60 // amount
+      itxn_field Amount
+      // Fee: 0
+      pushint 0
+      itxn_field Fee
+    itxn_submit
+    // end inner_txn
+  b l14_end
+  l14_else:
+  // else:
+    // inner_txn:
+    itxn_begin
+      // TypeEnum: Axfer
+      pushint 4 // Axfer
+      itxn_field TypeEnum
+      // Sender: sender
+      load 59 // sender
+      itxn_field Sender
+      // AssetReceiver: receiver
+      load 58 // receiver
+      itxn_field AssetReceiver
+      // AssetAmount: amount
+      load 60 // amount
+      itxn_field AssetAmount
+      // XferAsset: asset_id
+      load 61 // asset_id
+      itxn_field XferAsset
+      // Fee: 0
+      pushint 0
+      itxn_field Fee
+    itxn_submit
+    // end inner_txn
+  l14_end: // end
+// return
+retsub
+
