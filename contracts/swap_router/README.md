@@ -49,7 +49,8 @@ All transaction fees must be paid by the sender of any of the outer transactions
 
 #### Logs
 
-Swap router app logs asset ids and amounts by following the Algorand Event Log Spec ([ARC-28](https://github.com/algorandfoundation/ARCs/blob/main/ARCs/arc-0028.md)). The log signature is "swap(uint64,uint64,uint64,uint64)" and parameters are input asset id, output asset id, input amount and output amount respectively. The input amount is the net amount which means the input amount sent minus the change amount.
+Swap router app logs asset ids and amounts by following the Algorand Event Log Spec ([ARC-28](https://github.com/algorandfoundation/ARCs/blob/main/ARCs/arc-0028.md)).
+The log signature is `swap(uint64,uint64,uint64,uint64)` and parameters are input asset id, output asset id, input amount and output amount respectively. The input amount is the net amount which means the input amount sent minus the change amount.
 
 #### Donations
 
@@ -91,8 +92,8 @@ AssetTransfer/Pay (Input):
 
 AppCall:	
     a. Mode: Fixed Input
-    Sender: user_address
-    Index: router_app_id
+        Sender: user_address
+        Index: router_app_id
         OnComplete: NoOp
         App Args: ["swap", "fixed-input", min_output_amount]
         Foreign Assets: [asset_in_id, asset_intermediary_id, asset_out_id]
