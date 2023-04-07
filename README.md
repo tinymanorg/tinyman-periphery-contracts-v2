@@ -1,5 +1,4 @@
-# tinyman-periphery-contracts-v2
-Tinyman Periphery Contracts
+# Tinyman Periphery Contracts V2
 
 This repository contains the periphery contracts for the Tinyman AMM V2.
 These contracts extend the functionality of the core contract by providing additional features and services.
