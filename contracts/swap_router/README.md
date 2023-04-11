@@ -1,5 +1,8 @@
 # Tinyman Swap Router Contracts
 
+- TESTNET APP ID: 184778019
+- MAINNET APP ID: TODO
+
 ### Overview
 
 [Tinyman AMM V2](https://github.com/tinymanorg/tinyman-amm-contracts-v2) is a Constant Product Market Maker with one pool per asset pair.
