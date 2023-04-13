@@ -1,11 +1,17 @@
 import unittest
 from decimal import Decimal
 
+from algojig import get_suggested_params
 from algosdk.encoding import decode_address
 from algosdk.future import transaction
 
 from .constants import *
 from .utils import get_pool_logicsig_bytecode
+
+
+class DummyAlgod:
+    def suggested_params(self):
+        return get_suggested_params()
 
 
 class BaseTestCase(unittest.TestCase):

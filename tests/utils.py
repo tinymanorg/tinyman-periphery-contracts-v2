@@ -1,11 +1,4 @@
-from decimal import ROUND_UP, Decimal
-
 from algosdk.future import transaction
-
-
-def int_to_bytes_without_zero_padding(value):
-    length = int((Decimal(value.bit_length()) / 8).quantize(Decimal('1.'), rounding=ROUND_UP))
-    return value.to_bytes(length, "big")
 
 
 def itob(value):
@@ -24,14 +17,3 @@ def get_pool_logicsig_bytecode(pool_template, app_id, asset_1_id, asset_2_id):
     program[11:19] = asset_1_id.to_bytes(8, 'big')
     program[19:27] = asset_2_id.to_bytes(8, 'big')
     return transaction.LogicSigAccount(program)
-
-
-def print_logs(txn):
-    logs = txn[b'dt'].get(b'lg')
-    if logs:
-        for log in logs:
-            if b'%i' in log:
-                i = log.index(b'%i')
-                s = log[0:i].decode()
-                value = int.from_bytes(log[i + 2:], 'big')
-                print(f'{s}: {value}')

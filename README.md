@@ -1,7 +1,14 @@
-# tinyman-periphery-contracts-v2
-Tinyman Periphery Contracts V2
+# Tinyman Periphery Contracts V2
 
-- TODO
+This repository contains the periphery contracts for the Tinyman AMM V2.
+These contracts extend the functionality of the core contract by providing additional features and services.
+
+### Contracts
+The contracts are written in [Tealish](https://tealish.tinyman.org).
+
+1. [Swap Router](contracts/swap_router): Allows making two swaps with single app call. It uses the core AMM contact and pools.
+    - TESTNET APP ID: 184778019
+    - MAINNET APP ID: TODO
 
 ### Licensing
 

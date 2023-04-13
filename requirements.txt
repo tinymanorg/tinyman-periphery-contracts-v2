@@ -1,3 +1,0 @@
-py-algorand-sdk==1.17
-git+https://github.com/Hipo/tealish.git@efa667ab4d9304777d568f30905d427ed1682e2c
-git+https://github.com/Hipo/algojig.git@282719479f22cb1b46c82c1a80981df2cc777574
