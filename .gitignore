@@ -8,7 +8,6 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
 develop-eggs/
 dist/
 downloads/
@@ -130,10 +129,3 @@ dmypy.json
 
 .DS_Store
 .idea
-
-# Ignore some tealish and ascjson related files
-*.map.json
-*.min.teal
-*.teal.tok
-
-!contracts/swap_router/build/
