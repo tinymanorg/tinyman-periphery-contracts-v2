@@ -1,0 +1,777 @@
+#pragma version 9
+
+// if !Txn.ApplicationID:
+  txn ApplicationID
+  !
+  bz l0_end
+  // then:
+    // app_global_put("tinyman_app_id", btoi(Txn.ApplicationArgs[1]))
+    pushbytes "tinyman_app_id"
+    txna ApplicationArgs 1
+    btoi
+    app_global_put
+    // app_global_put("folks_manager_app_id", btoi(Txn.ApplicationArgs[2]))
+    pushbytes "folks_manager_app_id"
+    txna ApplicationArgs 2
+    btoi
+    app_global_put
+    // exit(1)
+    pushint 1           // uint8
+    return
+  l0_end:             // end
+
+// int tinyman_app_id = app_global_get("tinyman_app_id") [slot 0]
+pushbytes "tinyman_app_id"
+app_global_get
+store 0             // tinyman_app_id
+// int folks_manager_app_id = app_global_get("folks_manager_app_id") [slot 1]
+pushbytes "folks_manager_app_id"
+app_global_get
+store 1             // folks_manager_app_id
+
+// router:
+txna ApplicationArgs 0
+pushbytes "add_liquidity"
+==
+bnz route_add_liquidity
+txna ApplicationArgs 0
+pushbytes "remove_liquidity"
+==
+bnz route_remove_liquidity
+txna ApplicationArgs 0
+pushbytes "noop"
+==
+bnz route_noop
+txna ApplicationArgs 0
+pushbytes "asset_optin"
+==
+bnz route_asset_optin
+txna ApplicationArgs 0
+pushbytes "update_application"
+==
+bnz route_update_application
+err                 // unexpected value
+route_add_liquidity:
+txn OnCompletion
+pushint 0           // NoOp
+==
+assert
+// Cast(Txn.ApplicationArgs[1], bytes[32])
+txna ApplicationArgs 1
+// Bytes Size Assertion
+dup
+len
+pushint 32
+==
+// Error: Expected 32 bytes
+assert
+// btoi(Txn.ApplicationArgs[2])
+txna ApplicationArgs 2
+btoi
+// btoi(Txn.ApplicationArgs[3])
+txna ApplicationArgs 3
+btoi
+callsub __func__add_liquidity
+pushint 1
+return
+route_remove_liquidity:
+txn OnCompletion
+pushint 0           // NoOp
+==
+assert
+// Txn.ApplicationArgs[1]
+txna ApplicationArgs 1
+// btoi(Txn.ApplicationArgs[2])
+txna ApplicationArgs 2
+btoi
+// btoi(Txn.ApplicationArgs[3])
+txna ApplicationArgs 3
+btoi
+callsub __func__remove_liquidity
+pushint 1
+return
+route_noop:
+txn OnCompletion
+pushint 0           // NoOp
+==
+assert
+callsub __func__noop
+pushint 1
+return
+route_asset_optin:
+txn OnCompletion
+pushint 0           // NoOp
+==
+assert
+callsub __func__asset_optin
+pushint 1
+return
+route_update_application:
+txn OnCompletion
+pushint 4           // UpdateApplication
+==
+assert
+callsub __func__update_application
+pushint 1
+return
+
+
+// func noop():
+__func__noop:
+// return
+retsub
+
+
+// func update_application():
+__func__update_application:
+// assert(Txn.Sender == Global.CreatorAddress)
+txn Sender
+global CreatorAddress
+==
+assert
+// return
+retsub
+
+
+// func asset_optin():
+__func__asset_optin:
+// int n = Txn.NumAppArgs [slot 2]
+txn NumAppArgs
+store 2             // n
+// for i in 1:n:
+  pushint 1           // uint8
+  store 3             // i
+  l1_for:
+  load 3              // i
+  load 2              // n
+  ==
+  bnz l1_end
+  // transfer(btoi(Txn.ApplicationArgs[i]), 0, Global.CurrentApplicationAddress, Global.CurrentApplicationAddress)
+  load 3              // i
+  txnas ApplicationArgs
+  btoi
+  pushint 0           // uint64
+  global CurrentApplicationAddress
+  global CurrentApplicationAddress
+  callsub __func__transfer
+  load 3              // i
+  pushint 1
+  +
+  store 3             // i
+  b l1_for
+  l1_end:             // end
+// return
+retsub
+
+
+// func add_liquidity(tm_pool_address: bytes[32], asset_0_lending_app_id: int, asset_1_lending_app_id: int):
+__func__add_liquidity:
+store 4             // asset_1_lending_app_id [int]
+store 5             // asset_0_lending_app_id [int]
+store 6             // tm_pool_address [bytes[32]]
+// int min_received = 0 [slot 7]
+pushint 0           // uint64
+store 7             // min_received
+
+// bytes a [slot 8]
+// _, a = app_global_get_ex(asset_0_lending_app_id, "a")
+load 5              // asset_0_lending_app_id
+pushbytes "a"
+app_global_get_ex
+pop                 // discarding value for _
+store 8             // a
+// int asset_0_id = extract_uint64(a, 0) [slot 9]
+load 8              // a
+pushint 0           // uint64
+extract_uint64
+store 9             // asset_0_id
+// int f_asset_0_id = extract_uint64(a, 8) [slot 10]
+load 8              // a
+pushint 8           // uint8
+extract_uint64
+store 10            // f_asset_0_id
+// _, a = app_global_get_ex(asset_1_lending_app_id, "a")
+load 4              // asset_1_lending_app_id
+pushbytes "a"
+app_global_get_ex
+pop                 // discarding value for _
+store 8             // a
+// int asset_1_id = extract_uint64(a, 0) [slot 11]
+load 8              // a
+pushint 0           // uint64
+extract_uint64
+store 11            // asset_1_id
+// int f_asset_1_id = extract_uint64(a, 8) [slot 12]
+load 8              // a
+pushint 8           // uint8
+extract_uint64
+store 12            // f_asset_1_id
+
+// folks_lending_deposit(asset_0_id, f_asset_0_id, asset_0_lending_app_id)
+load 9              // asset_0_id
+load 10             // f_asset_0_id
+load 5              // asset_0_lending_app_id
+callsub __func__folks_lending_deposit
+// folks_lending_deposit(asset_1_id, f_asset_1_id, asset_1_lending_app_id)
+load 11             // asset_1_id
+load 12             // f_asset_1_id
+load 4              // asset_1_lending_app_id
+callsub __func__folks_lending_deposit
+
+// int lp_asset_id [slot 13]
+// _, lp_asset_id = app_local_get_ex(tm_pool_address, tinyman_app_id, "pool_token_asset_id")
+load 6              // tm_pool_address
+load 0              // tinyman_app_id
+pushbytes "pool_token_asset_id"
+app_local_get_ex
+pop                 // discarding value for _
+store 13            // lp_asset_id
+// add_liquidity_to_tinyman(f_asset_0_id, f_asset_1_id, tm_pool_address, lp_asset_id)
+load 10             // f_asset_0_id
+load 12             // f_asset_1_id
+load 6              // tm_pool_address
+load 13             // lp_asset_id
+callsub __func__add_liquidity_to_tinyman
+
+// int lp_balance = get_balance(Global.CurrentApplicationAddress, lp_asset_id) [slot 14]
+global CurrentApplicationAddress
+load 13             // lp_asset_id
+callsub __func__get_balance
+store 14            // lp_balance
+// assert(lp_balance >= min_received)
+load 14             // lp_balance
+load 7              // min_received
+>=
+assert
+// transfer(lp_asset_id, lp_balance, Global.CurrentApplicationAddress, Txn.Sender)
+load 13             // lp_asset_id
+load 14             // lp_balance
+global CurrentApplicationAddress
+txn Sender
+callsub __func__transfer
+// return
+retsub
+
+
+// func remove_liquidity(tm_pool_address: bytes, asset_0_lending_app_id: int, asset_1_lending_app_id: int):
+__func__remove_liquidity:
+store 15            // asset_1_lending_app_id [int]
+store 16            // asset_0_lending_app_id [int]
+store 17            // tm_pool_address [bytes]
+// int lp_asset_id [slot 18]
+// _, lp_asset_id = app_local_get_ex(tm_pool_address, tinyman_app_id, "pool_token_asset_id")
+load 17             // tm_pool_address
+load 0              // tinyman_app_id
+pushbytes "pool_token_asset_id"
+app_local_get_ex
+pop                 // discarding value for _
+store 18            // lp_asset_id
+
+// bytes a [slot 19]
+// _, a = app_global_get_ex(asset_0_lending_app_id, "a")
+load 16             // asset_0_lending_app_id
+pushbytes "a"
+app_global_get_ex
+pop                 // discarding value for _
+store 19            // a
+// int asset_0_id = extract_uint64(a, 0) [slot 20]
+load 19             // a
+pushint 0           // uint64
+extract_uint64
+store 20            // asset_0_id
+// int f_asset_0_id = extract_uint64(a, 8) [slot 21]
+load 19             // a
+pushint 8           // uint8
+extract_uint64
+store 21            // f_asset_0_id
+// _, a = app_global_get_ex(asset_1_lending_app_id, "a")
+load 15             // asset_1_lending_app_id
+pushbytes "a"
+app_global_get_ex
+pop                 // discarding value for _
+store 19            // a
+// int asset_1_id = extract_uint64(a, 0) [slot 22]
+load 19             // a
+pushint 0           // uint64
+extract_uint64
+store 22            // asset_1_id
+// int f_asset_1_id = extract_uint64(a, 8) [slot 23]
+load 19             // a
+pushint 8           // uint8
+extract_uint64
+store 23            // f_asset_1_id
+
+
+// remove_liquidity_from_tinyman(f_asset_0_id, f_asset_1_id, tm_pool_address, lp_asset_id)
+load 21             // f_asset_0_id
+load 23             // f_asset_1_id
+load 17             // tm_pool_address
+load 18             // lp_asset_id
+callsub __func__remove_liquidity_from_tinyman
+// folks_lending_withdraw(asset_0_id, f_asset_0_id, asset_0_lending_app_id)
+load 20             // asset_0_id
+load 21             // f_asset_0_id
+load 16             // asset_0_lending_app_id
+callsub __func__folks_lending_withdraw
+// folks_lending_withdraw(asset_1_id, f_asset_1_id, asset_1_lending_app_id)
+load 22             // asset_1_id
+load 23             // f_asset_1_id
+load 15             // asset_1_lending_app_id
+callsub __func__folks_lending_withdraw
+
+// int asset_0_amount = get_balance(Global.CurrentApplicationAddress, asset_0_id) [slot 24]
+global CurrentApplicationAddress
+load 20             // asset_0_id
+callsub __func__get_balance
+store 24            // asset_0_amount
+// int asset_1_amount = get_balance(Global.CurrentApplicationAddress, asset_1_id) [slot 25]
+global CurrentApplicationAddress
+load 22             // asset_1_id
+callsub __func__get_balance
+store 25            // asset_1_amount
+// transfer(asset_0_id, asset_0_amount, Global.CurrentApplicationAddress, Txn.Sender)
+load 20             // asset_0_id
+load 24             // asset_0_amount
+global CurrentApplicationAddress
+txn Sender
+callsub __func__transfer
+// transfer(asset_1_id, asset_1_amount, Global.CurrentApplicationAddress, Txn.Sender)
+load 22             // asset_1_id
+load 25             // asset_1_amount
+global CurrentApplicationAddress
+txn Sender
+callsub __func__transfer
+// return
+retsub
+
+
+// func folks_lending_deposit(asset_id: int, f_asset_id: int, lending_pool_app_id: int):
+__func__folks_lending_deposit:
+store 26            // lending_pool_app_id [int]
+store 27            // f_asset_id [int]
+store 28            // asset_id [int]
+// bytes lending_pool_address [slot 29]
+// _, lending_pool_address = app_params_get(AppAddress, lending_pool_app_id)
+load 26             // lending_pool_app_id
+app_params_get AppAddress
+pop                 // discarding value for _
+store 29            // lending_pool_address
+// int asset_amount = get_balance(Global.CurrentApplicationAddress, asset_id) [slot 30]
+global CurrentApplicationAddress
+load 28             // asset_id
+callsub __func__get_balance
+store 30            // asset_amount
+// inner_group:
+callsub _itxn_group_begin
+  // transfer(asset_id, asset_amount, Global.CurrentApplicationAddress, lending_pool_address)
+  load 28             // asset_id
+  load 30             // asset_amount
+  global CurrentApplicationAddress
+  load 29             // lending_pool_address
+  callsub __func__transfer
+  // inner_txn:
+  callsub _itxn_begin
+    // Type: "appl"
+    pushbytes "appl"
+    itxn_field Type
+    // OnCompletion: NoOp
+    pushint 0           // NoOp
+    itxn_field OnCompletion
+    // ApplicationID: lending_pool_app_id
+    load 26             // lending_pool_app_id
+    itxn_field ApplicationID
+    // ApplicationArgs[0]: method("deposit(txn,account,asset,asset,application)uint64")
+    method "deposit(txn,account,asset,asset,application)uint64"
+    itxn_field ApplicationArgs
+    // ApplicationArgs[1]: itob(0)
+    pushint 0           // uint64
+    itob
+    itxn_field ApplicationArgs
+    // ApplicationArgs[2]: itob(asset_id)
+    load 28             // asset_id
+    itob
+    itxn_field ApplicationArgs
+    // ApplicationArgs[3]: itob(f_asset_id)
+    load 27             // f_asset_id
+    itob
+    itxn_field ApplicationArgs
+    // ApplicationArgs[4]: itob(0)
+    pushint 0           // uint64
+    itob
+    itxn_field ApplicationArgs
+    // Applications[0]: folks_manager_app_id
+    load 1              // folks_manager_app_id
+    itxn_field Applications
+    // Assets[0]: asset_id
+    load 28             // asset_id
+    itxn_field Assets
+    // Assets[1]: f_asset_id
+    load 27             // f_asset_id
+    itxn_field Assets
+    // Fee: 0
+    pushint 0           // uint64
+    itxn_field Fee
+  callsub _itxn_submit
+  // end inner_txn
+  callsub _itxn_group_submit
+// end inner_group
+// return
+retsub
+
+
+// func folks_lending_withdraw(asset_id: int, f_asset_id: int, lending_pool_app_id: int):
+__func__folks_lending_withdraw:
+store 31            // lending_pool_app_id [int]
+store 32            // f_asset_id [int]
+store 33            // asset_id [int]
+// bytes lending_pool_address [slot 34]
+// _, lending_pool_address = app_params_get(AppAddress, lending_pool_app_id)
+load 31             // lending_pool_app_id
+app_params_get AppAddress
+pop                 // discarding value for _
+store 34            // lending_pool_address
+// int f_asset_amount = get_balance(Global.CurrentApplicationAddress, f_asset_id) [slot 35]
+global CurrentApplicationAddress
+load 32             // f_asset_id
+callsub __func__get_balance
+store 35            // f_asset_amount
+// inner_group:
+callsub _itxn_group_begin
+  // transfer(f_asset_id, f_asset_amount, Global.CurrentApplicationAddress, lending_pool_address)
+  load 32             // f_asset_id
+  load 35             // f_asset_amount
+  global CurrentApplicationAddress
+  load 34             // lending_pool_address
+  callsub __func__transfer
+  // inner_txn:
+  callsub _itxn_begin
+    // Type: "appl"
+    pushbytes "appl"
+    itxn_field Type
+    // OnCompletion: NoOp
+    pushint 0           // NoOp
+    itxn_field OnCompletion
+    // ApplicationID: lending_pool_app_id
+    load 31             // lending_pool_app_id
+    itxn_field ApplicationID
+    // ApplicationArgs[0]: method("withdraw(axfer,uint64,account,asset,asset,application)uint64")
+    method "withdraw(axfer,uint64,account,asset,asset,application)uint64"
+    itxn_field ApplicationArgs
+    // ApplicationArgs[1]: itob(0)
+    pushint 0           // uint64
+    itob
+    itxn_field ApplicationArgs
+    // ApplicationArgs[2]: itob(0)
+    pushint 0           // uint64
+    itob
+    itxn_field ApplicationArgs
+    // ApplicationArgs[3]: itob(0)
+    pushint 0           // uint64
+    itob
+    itxn_field ApplicationArgs
+    // ApplicationArgs[4]: itob(1)
+    pushint 1           // uint8
+    itob
+    itxn_field ApplicationArgs
+    // ApplicationArgs[5]: itob(0)
+    pushint 0           // uint64
+    itob
+    itxn_field ApplicationArgs
+    // Applications[0]: folks_manager_app_id
+    load 1              // folks_manager_app_id
+    itxn_field Applications
+    // Assets[0]: asset_id
+    load 33             // asset_id
+    itxn_field Assets
+    // Assets[1]: f_asset_id
+    load 32             // f_asset_id
+    itxn_field Assets
+    // Fee: 0
+    pushint 0           // uint64
+    itxn_field Fee
+  callsub _itxn_submit
+  // end inner_txn
+  callsub _itxn_group_submit
+// end inner_group
+// return
+retsub
+
+
+// func add_liquidity_to_tinyman(f_asset_0_id: int, f_asset_1_id: int, pool_address: bytes, lp_asset_id: int):
+__func__add_liquidity_to_tinyman:
+store 36            // lp_asset_id [int]
+store 37            // pool_address [bytes]
+store 38            // f_asset_1_id [int]
+store 39            // f_asset_0_id [int]
+// int f_asset_0_amount = get_balance(Global.CurrentApplicationAddress, f_asset_0_id) [slot 40]
+global CurrentApplicationAddress
+load 39             // f_asset_0_id
+callsub __func__get_balance
+store 40            // f_asset_0_amount
+// int f_asset_1_amount = get_balance(Global.CurrentApplicationAddress, f_asset_1_id) [slot 41]
+global CurrentApplicationAddress
+load 38             // f_asset_1_id
+callsub __func__get_balance
+store 41            // f_asset_1_amount
+
+// bytes arg0 = "add_liquidity" [slot 42]
+pushbytes "add_liquidity"
+store 42            // arg0
+// bytes arg1 = "flexible" [slot 43]
+pushbytes "flexible"
+store 43            // arg1
+
+// int issued_liquidity_tokens [slot 44]
+// _, issued_liquidity_tokens = app_local_get_ex(pool_address, tinyman_app_id, "issued_pool_tokens")
+load 37             // pool_address
+load 0              // tinyman_app_id
+pushbytes "issued_pool_tokens"
+app_local_get_ex
+pop                 // discarding value for _
+store 44            // issued_liquidity_tokens
+// if issued_liquidity_tokens == 0:
+  load 44             // issued_liquidity_tokens
+  pushint 0           // uint64
+  ==
+  bz l2_end
+  // then:
+    // arg0 = "add_initial_liquidity"
+    pushbytes "add_initial_liquidity"
+    store 42            // arg0
+    // arg1 = ""
+    pushbytes ""
+    store 43            // arg1
+  l2_end:             // end
+
+// inner_group:
+callsub _itxn_group_begin
+  // transfer(f_asset_0_id, f_asset_0_amount, Global.CurrentApplicationAddress, pool_address)
+  load 39             // f_asset_0_id
+  load 40             // f_asset_0_amount
+  global CurrentApplicationAddress
+  load 37             // pool_address
+  callsub __func__transfer
+  // transfer(f_asset_1_id, f_asset_1_amount, Global.CurrentApplicationAddress, pool_address)
+  load 38             // f_asset_1_id
+  load 41             // f_asset_1_amount
+  global CurrentApplicationAddress
+  load 37             // pool_address
+  callsub __func__transfer
+  
+  // inner_txn:
+  callsub _itxn_begin
+    // Type: "appl"
+    pushbytes "appl"
+    itxn_field Type
+    // OnCompletion: NoOp
+    pushint 0           // NoOp
+    itxn_field OnCompletion
+    // ApplicationID: tinyman_app_id
+    load 0              // tinyman_app_id
+    itxn_field ApplicationID
+    // ApplicationArgs[0]: arg0
+    load 42             // arg0
+    itxn_field ApplicationArgs
+    // ApplicationArgs[1]: arg1
+    load 43             // arg1
+    itxn_field ApplicationArgs
+    // ApplicationArgs[2]: itob(0)
+    pushint 0           // uint64
+    itob
+    itxn_field ApplicationArgs
+    // Accounts[0]: pool_address
+    load 37             // pool_address
+    itxn_field Accounts
+    // Assets[0]: lp_asset_id
+    load 36             // lp_asset_id
+    itxn_field Assets
+    // Fee: 0
+    pushint 0           // uint64
+    itxn_field Fee
+  callsub _itxn_submit
+  // end inner_txn
+  callsub _itxn_group_submit
+// end inner_group
+// return
+retsub
+
+
+// func remove_liquidity_from_tinyman(f_asset_0_id: int, f_asset_1_id: int, pool_address: bytes, lp_asset_id: int):
+__func__remove_liquidity_from_tinyman:
+store 45            // lp_asset_id [int]
+store 46            // pool_address [bytes]
+store 47            // f_asset_1_id [int]
+store 48            // f_asset_0_id [int]
+// int lp_balance = get_balance(Global.CurrentApplicationAddress, lp_asset_id) [slot 49]
+global CurrentApplicationAddress
+load 45             // lp_asset_id
+callsub __func__get_balance
+store 49            // lp_balance
+
+// inner_group:
+callsub _itxn_group_begin
+  // transfer(lp_asset_id, lp_balance, Global.CurrentApplicationAddress, pool_address)
+  load 45             // lp_asset_id
+  load 49             // lp_balance
+  global CurrentApplicationAddress
+  load 46             // pool_address
+  callsub __func__transfer
+  // inner_txn:
+  callsub _itxn_begin
+    // Type: "appl"
+    pushbytes "appl"
+    itxn_field Type
+    // OnCompletion: NoOp
+    pushint 0           // NoOp
+    itxn_field OnCompletion
+    // ApplicationID: tinyman_app_id
+    load 0              // tinyman_app_id
+    itxn_field ApplicationID
+    // ApplicationArgs[0]: "remove_liquidity"
+    pushbytes "remove_liquidity"
+    itxn_field ApplicationArgs
+    // ApplicationArgs[1]: itob(0)
+    pushint 0           // uint64
+    itob
+    itxn_field ApplicationArgs
+    // ApplicationArgs[2]: itob(0)
+    pushint 0           // uint64
+    itob
+    itxn_field ApplicationArgs
+    // Accounts[0]: pool_address
+    load 46             // pool_address
+    itxn_field Accounts
+    // Assets[0]: f_asset_0_id
+    load 48             // f_asset_0_id
+    itxn_field Assets
+    // Assets[1]: f_asset_1_id
+    load 47             // f_asset_1_id
+    itxn_field Assets
+    // Fee: 0
+    pushint 0           // uint64
+    itxn_field Fee
+  callsub _itxn_submit
+  // end inner_txn
+  callsub _itxn_group_submit
+// end inner_group
+// return
+retsub
+
+
+
+// func get_balance(address: bytes, asset_id: int) int:
+__func__get_balance:
+store 50            // asset_id [int]
+store 51            // address [bytes]
+// int balance = 0 [slot 52]
+pushint 0           // uint64
+store 52            // balance
+// if asset_id == 0:
+  load 50             // asset_id
+  pushint 0           // uint64
+  ==
+  bz l3_else
+  // then:
+    // balance = balance(address) - min_balance(address)
+    load 51             // address
+    balance
+    load 51             // address
+    min_balance
+    -
+    store 52            // balance
+  b l3_end
+  l3_else:
+  // else:
+    // _, balance = asset_holding_get(AssetBalance, address, asset_id)
+    load 51             // address
+    load 50             // asset_id
+    asset_holding_get AssetBalance
+    pop                 // discarding value for _
+    store 52            // balance
+  l3_end:             // end
+// return balance
+load 52             // balance
+retsub
+
+// func transfer(asset_id: int, amount: int, sender: bytes, receiver: bytes):
+__func__transfer:
+store 53            // receiver [bytes]
+store 54            // sender [bytes]
+store 55            // amount [int]
+store 56            // asset_id [int]
+// if asset_id == 0:
+  load 56             // asset_id
+  pushint 0           // uint64
+  ==
+  bz l4_else
+  // then:
+    // inner_txn:
+    callsub _itxn_begin
+      // TypeEnum: Pay
+      pushint 1           // Pay
+      itxn_field TypeEnum
+      // Sender: sender
+      load 54             // sender
+      itxn_field Sender
+      // Receiver: receiver
+      load 53             // receiver
+      itxn_field Receiver
+      // Amount: amount
+      load 55             // amount
+      itxn_field Amount
+      // Fee: 0
+      pushint 0           // uint64
+      itxn_field Fee
+    callsub _itxn_submit
+    // end inner_txn
+  b l4_end
+  l4_else:
+  // else:
+    // inner_txn:
+    callsub _itxn_begin
+      // TypeEnum: Axfer
+      pushint 4           // Axfer
+      itxn_field TypeEnum
+      // Sender: sender
+      load 54             // sender
+      itxn_field Sender
+      // AssetReceiver: receiver
+      load 53             // receiver
+      itxn_field AssetReceiver
+      // AssetAmount: amount
+      load 55             // amount
+      itxn_field AssetAmount
+      // XferAsset: asset_id
+      load 56             // asset_id
+      itxn_field XferAsset
+      // Fee: 0
+      pushint 0           // uint64
+      itxn_field Fee
+    callsub _itxn_submit
+    // end inner_txn
+  l4_end:             // end
+// return
+retsub
+
+
+_itxn_group_begin:
+load 57; !; assert  // ensure no group active
+int 1; store 57; retsub // set group flag
+
+_itxn_begin:
+load 57
+switch _itxn_begin__0 _itxn_begin__1 _itxn_begin__2
+err
+_itxn_begin__0: itxn_begin; retsub // no group
+_itxn_begin__1: itxn_begin; int 2; store 57; retsub // start first txn of group
+_itxn_begin__2: itxn_next; retsub // start next txn of group
+
+_itxn_submit:
+load 57
+bz _itxn_submit__0
+retsub              // in a group, don't submit
+_itxn_submit__0: itxn_submit; retsub // no group, submit
+_itxn_group_submit:
+itxn_submit
+int 0; store 57; retsub // set group flag to 0
+
