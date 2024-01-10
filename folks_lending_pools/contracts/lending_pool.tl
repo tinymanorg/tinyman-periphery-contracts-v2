@@ -43,8 +43,6 @@ end
 
 @public()
 func add_liquidity(tm_pool_address: bytes[32], asset_0_lending_app_id: int, asset_1_lending_app_id: int):
-    int min_received = 0
-
     bytes a
     _, a = app_global_get_ex(asset_0_lending_app_id, "a")
     int asset_0_id = extract_uint64(a, 0)
@@ -61,7 +59,6 @@ func add_liquidity(tm_pool_address: bytes[32], asset_0_lending_app_id: int, asse
     add_liquidity_to_tinyman(f_asset_0_id, f_asset_1_id, tm_pool_address, lp_asset_id)
 
     int lp_balance = get_balance(Global.CurrentApplicationAddress, lp_asset_id)
-    assert(lp_balance >= min_received)
     transfer(lp_asset_id, lp_balance, Global.CurrentApplicationAddress, Txn.Sender)
     return
 end
@@ -145,8 +142,20 @@ end
 
 
 func add_liquidity_to_tinyman(f_asset_0_id: int, f_asset_1_id: int, pool_address: bytes, lp_asset_id: int):
-    int f_asset_0_amount = get_balance(Global.CurrentApplicationAddress, f_asset_0_id)
-    int f_asset_1_amount = get_balance(Global.CurrentApplicationAddress, f_asset_1_id)
+    int asset_1_id
+    int asset_2_id
+    # Asset order is important for Tinyman
+    # asset_1_id, asset_2_id = larger, smaller
+    if f_asset_0_id > f_asset_1_id:
+        asset_1_id = f_asset_0_id
+        asset_2_id = f_asset_1_id
+    else:
+        asset_1_id = f_asset_1_id
+        asset_2_id = f_asset_0_id
+    end
+
+    int asset_1_amount = get_balance(Global.CurrentApplicationAddress, asset_1_id)
+    int asset_2_amount = get_balance(Global.CurrentApplicationAddress, asset_2_id)
 
     bytes arg0 = "add_liquidity"
     bytes arg1 = "flexible"
@@ -159,8 +168,8 @@ func add_liquidity_to_tinyman(f_asset_0_id: int, f_asset_1_id: int, pool_address
     end
 
     inner_group:
-        transfer(f_asset_0_id, f_asset_0_amount, Global.CurrentApplicationAddress, pool_address)
-        transfer(f_asset_1_id, f_asset_1_amount, Global.CurrentApplicationAddress, pool_address)
+        transfer(asset_1_id, asset_1_amount, Global.CurrentApplicationAddress, pool_address)
+        transfer(asset_2_id, asset_2_amount, Global.CurrentApplicationAddress, pool_address)
 
         inner_txn:
             Type: "appl"
