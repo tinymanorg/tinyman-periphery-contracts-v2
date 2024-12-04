@@ -15,7 +15,9 @@ from algosdk.constants import ZERO_ADDRESS
 
 from tests.constants import MAX_ASSET_AMOUNT, APPLICATION_ID as AMM_APPLICATION_ID
 from tests.core import BaseTestCase
-from tests.utils import int_array, bytes_array
+from tests.utils import int_array, bytes_array, JigAlgod
+
+from sdk.client import SwapRouterClient
 
 swap_router_program = TealishProgram('contracts/swap_router_v2_approval.tl')
 swap_clear_state_program = TealishProgram('contracts/swap_router_v2_clear_state.tl')
@@ -509,6 +511,92 @@ class SwapTestCase(SwapRouterTestCase):
         self.assertEqual(int.from_bytes(event_log[28:36], 'big'), output_amount)
 
         inner_transactions = txns[1][b'dt'][b'itx']
+
+        itxn = inner_transactions[-1][b'txn']
+        final_transfer_amount = itxn.get(b'aamt', itxn.get(b'amt', 0))
+        self.assertEqual(final_transfer_amount, output_amount)
+
+
+    def test_client_multi_hop_swap_with_talgo(self):
+        self.reset_ledger()
+
+        self.ledger.add(self.user_addr, 10_000_000, self.talgo_asset_id)
+
+        pool_0_asset_1_id, pool_0_asset_2_id = sorted([self.talgo_asset_id, self.asset_a_id], reverse=True)
+        pool_1_asset_1_id, pool_1_asset_2_id = sorted([0, self.asset_b_id], reverse=True)
+        pool_2_asset_1_id, pool_2_asset_2_id = sorted([self.asset_b_id, self.asset_c_id], reverse=True)
+        pool_3_asset_1_id, pool_3_asset_2_id = sorted([self.asset_c_id, self.asset_d_id], reverse=True)
+
+        pool_0_address, pool_0_token_asset_id = self.bootstrap_pool(pool_0_asset_1_id, pool_0_asset_2_id)
+        self.ledger.opt_in_asset(self.user_addr, pool_0_token_asset_id)
+
+        pool_1_address, pool_1_token_asset_id = self.bootstrap_pool(pool_1_asset_1_id, pool_1_asset_2_id)
+        self.ledger.opt_in_asset(self.user_addr, pool_1_token_asset_id)
+
+        pool_2_address, pool_2_token_asset_id = self.bootstrap_pool(pool_2_asset_1_id, pool_2_asset_2_id)
+        self.ledger.opt_in_asset(self.user_addr, pool_2_token_asset_id)
+
+        pool_3_address, pool_3_token_asset_id = self.bootstrap_pool(pool_3_asset_1_id, pool_3_asset_2_id)
+        self.ledger.opt_in_asset(self.user_addr, pool_3_token_asset_id)
+
+        input_amount = 1000
+        output_amount = 987
+
+        self.set_initial_pool_liquidity(
+            pool_address=pool_0_address,
+            asset_1_id=pool_0_asset_1_id,
+            asset_2_id=pool_0_asset_2_id,
+            pool_token_asset_id=pool_0_token_asset_id,
+            asset_1_reserves=1_000_000,
+            asset_2_reserves=1_000_000,
+            liquidity_provider_address=self.user_addr
+        )
+
+        self.set_initial_pool_liquidity(
+            pool_address=pool_1_address,
+            asset_1_id=pool_1_asset_1_id,
+            asset_2_id=pool_1_asset_2_id,
+            pool_token_asset_id=pool_1_token_asset_id,
+            asset_1_reserves=1_000_000,
+            asset_2_reserves=1_000_000,
+            liquidity_provider_address=self.user_addr
+        )
+
+        self.set_initial_pool_liquidity(
+            pool_address=pool_2_address,
+            asset_1_id=pool_2_asset_1_id,
+            asset_2_id=pool_2_asset_2_id,
+            pool_token_asset_id=pool_2_token_asset_id,
+            asset_1_reserves=1_000_000,
+            asset_2_reserves=1_000_000,
+            liquidity_provider_address=self.user_addr
+        )
+
+        self.set_initial_pool_liquidity(
+            pool_address=pool_3_address,
+            asset_1_id=pool_3_asset_1_id,
+            asset_2_id=pool_3_asset_2_id,
+            pool_token_asset_id=pool_3_token_asset_id,
+            asset_1_reserves=1_000_000,
+            asset_2_reserves=1_000_000,
+            liquidity_provider_address=self.user_addr
+        )
+    
+        client = SwapRouterClient(JigAlgod(self.ledger), SWAP_ROUTER_APP_ID, AMM_APPLICATION_ID, self.talgo_app_id, self.user_addr, self.user_sk)
+
+        route = [self.asset_a_id, self.talgo_asset_id, 0, self.asset_b_id, self.asset_c_id, self.asset_d_id]
+        pools = [pool_0_address, self.talgo_app_address, pool_1_address, pool_2_address, pool_3_address]
+        client.swap(input_amount=1000, output_amount=1, route=route, pools=pools)
+
+        logs = self.ledger.last_block[b'txns'][1][b'dt'].get(b'lg')
+        event_log = logs[0]
+        self.assertEqual(event_log[:4], self.swap_event_selector)
+        self.assertEqual(int.from_bytes(event_log[4:12], 'big'), route[0])
+        self.assertEqual(int.from_bytes(event_log[12:20], 'big'), route[-1])
+        self.assertEqual(int.from_bytes(event_log[20:28], 'big'), input_amount)
+        self.assertEqual(int.from_bytes(event_log[28:36], 'big'), output_amount)
+
+        inner_transactions = self.ledger.last_block[b'txns'][1][b'dt'][b'itx']
 
         itxn = inner_transactions[-1][b'txn']
         final_transfer_amount = itxn.get(b'aamt', itxn.get(b'amt', 0))
