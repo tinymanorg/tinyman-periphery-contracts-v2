@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from algojig import get_suggested_params
 from algosdk.encoding import decode_address
-from algosdk.future import transaction
+from algosdk import transaction
 
 from .constants import *
 from .utils import get_pool_logicsig_bytecode
@@ -16,6 +16,57 @@ class DummyAlgod:
 
 class BaseTestCase(unittest.TestCase):
     maxDiff = None
+
+
+    def create_talgo_app(self):
+        self.talgo_app_id = 2002
+        self.talgo_app_account_1 = get_application_address(2003)
+        self.talgo_app_account_2 = get_application_address(2004)
+        self.talgo_app_account_3 = get_application_address(2005)
+        self.talgo_app_account_4 = get_application_address(2006)
+        self.talgo_asset_id = 2010
+        self.talgo_app_address = get_application_address(self.talgo_app_id)
+
+        self.ledger.create_app(
+            app_id=self.talgo_app_id,
+            approval_program=talgo_approval_program,
+            creator=self.app_creator_address,
+            local_ints=0,
+            local_bytes=0,
+            global_ints=16,
+            global_bytes=16,
+        )
+
+        self.ledger.set_global_state(
+            self.talgo_app_id,
+            {
+                b"manager": decode_address(self.app_creator_address),
+                b"node_manager_1": decode_address(self.app_creator_address),
+                b"fee_collector": decode_address(self.app_creator_address),
+                b"protocol_fee": 10,
+                b"max_account_balance": 65_000_000_000_000,
+                b"talgo_asset_id": self.talgo_asset_id,
+                b"rate": int(1 * 1e12),
+                b"minted_talgo": 1_000_000_000_000,
+                b"algo_balance": 1_000_000_000_000,
+                b"initial_balance": 2_000_000,
+                b"account_0": decode_address(self.talgo_app_address),
+                b"account_1": decode_address(self.talgo_app_account_1),
+                b"account_2": decode_address(self.talgo_app_account_2),
+                b"account_3": decode_address(self.talgo_app_account_3),
+                b"account_4": decode_address(self.talgo_app_account_4),
+            }
+        )
+
+        self.ledger.set_account_balance(self.talgo_app_address, 1_000_001_600_000)
+        self.ledger.set_account_balance(self.talgo_app_account_1, 100_000)
+        self.ledger.set_account_balance(self.talgo_app_account_2, 100_000)
+        self.ledger.set_account_balance(self.talgo_app_account_3, 100_000)
+        self.ledger.set_account_balance(self.talgo_app_account_4, 100_000)
+        self.ledger.set_account_balance(self.talgo_app_address, 10_000_000_000_000_000 - 1_000_000_000_000, self.talgo_asset_id)
+
+        if self.talgo_app_id not in self.ledger.boxes:
+            self.ledger.boxes[self.talgo_app_id] = {}
 
     def create_amm_app(self):
         if self.app_creator_address not in self.ledger.accounts:

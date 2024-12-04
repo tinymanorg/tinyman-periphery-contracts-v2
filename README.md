@@ -6,7 +6,7 @@ These contracts extend the functionality of the core contract by providing addit
 ### Contracts
 The contracts are written in [Tealish](https://tealish.tinyman.org).
 
-1. [Swap Router](contracts/swap_router): Allows making two swaps with single app call. It uses the core AMM contact and pools.
+1. [Swap Router](swap_router): Allows making two swaps with single app call. It uses the core AMM contact and pools.
     - TESTNET APP ID: 184778019
     - MAINNET APP ID: 1083651166
 

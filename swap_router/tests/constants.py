@@ -40,7 +40,7 @@ MAX_UINT64 = 2**64 - 1    # 18446744073709551615
 MAX_ASSET_AMOUNT = MAX_UINT64
 POOL_TOKEN_TOTAL_SUPPLY = MAX_ASSET_AMOUNT
 ALGO_ASSET_ID = 0
-APPLICATION_ID = 1
+APPLICATION_ID = 1001
 APPLICATION_ADDRESS = get_application_address(APPLICATION_ID)
 
 # State
@@ -56,3 +56,6 @@ APP_GLOBAL_BYTES = 3
 # + 542,500 App Optin (100000 + (25000+3500)*12 + (25000+25000)*2)
 MIN_POOL_BALANCE_ASA_ALGO_PAIR = 300_000 + (100_000 + (25_000 + 3_500) * APP_LOCAL_INTS + (25_000 + 25_000) * APP_LOCAL_BYTES)
 MIN_POOL_BALANCE_ASA_ASA_PAIR = MIN_POOL_BALANCE_ASA_ALGO_PAIR + 100_000
+
+
+talgo_approval_program = TealProgram(teal=requests.get("https://github.com/tinymanorg/tinyman-consensus-staking/blob/main/contracts/talgo/build/talgo_approval.teal?raw=True").text)
