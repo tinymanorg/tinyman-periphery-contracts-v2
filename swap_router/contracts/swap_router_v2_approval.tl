@@ -9,6 +9,7 @@ end
 
 router:
     create_application
+    update_application
     asset_opt_in
     set_manager
     set_extra_collector
@@ -29,6 +30,13 @@ func create_application(tinyman_app_id: int, talgo_app_id: int, talgo_asset_id: 
     app_global_put("tinyman_app_id", tinyman_app_id)
     app_global_put("manager", Txn.Sender)
     app_global_put("extra_collector", Txn.Sender)
+    return
+end
+
+# TODO: Remove function for mainnet
+@public(OnCompletion=UpdateApplication)
+func update_application():
+    assert(Txn.Sender == app_global_get("manager"))
     return
 end
 
@@ -129,11 +137,13 @@ func set_extra_collector(new_collector: bytes[32]):
 end
 
 
+# Permission: extra_collector
 @public()
 func claim_extra(asset_id: int):
     # Transfer any extra (donations) to the extra_collector
     # It must be the first txn of the group.
     assert(Txn.GroupIndex == 0)
+    assert(Txn.Sender == app_global_get("extra_collector"))
 
     int asset_amount
     int extra_asset_id
