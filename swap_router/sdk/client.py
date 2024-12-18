@@ -134,3 +134,52 @@ class SwapRouterClient(BaseClient):
                 ))
         inner_txns = sum(tx.get("inner_txns", 0) for tx in transactions)
         return self._submit(txns, additional_fees=inner_txns)
+    
+    def claim_extra(self, asset_id):
+        sp = self.get_suggested_params()
+        txns = [
+            transaction.ApplicationNoOpTxn(
+                sender=self.user_address,
+                sp=sp,
+                index=self.app_id,
+                app_args=[b"claim_extra", asset_id],
+                foreign_assets=[asset_id],
+            )
+        ]
+        return self._submit(txns, additional_fees=1)
+    
+    def set_extra_collector(self, new_collector):
+        sp = self.get_suggested_params()
+        txns = [
+            transaction.ApplicationNoOpTxn(
+                sender=self.user_address,
+                sp=sp,
+                index=self.app_id,
+                app_args=[b"set_extra_collector", decode_address(new_collector)],
+            )
+        ]
+        return self._submit(txns, additional_fees=0)
+
+    def propose_manager(self, new_manager):
+        sp = self.get_suggested_params()
+        txns = [
+            transaction.ApplicationNoOpTxn(
+                sender=self.user_address,
+                sp=sp,
+                index=self.app_id,
+                app_args=[b"propose_manager", decode_address(new_manager)],
+            )
+        ]
+        return self._submit(txns, additional_fees=0)
+    
+    def accept_manager(self):
+        sp = self.get_suggested_params()
+        txns = [
+            transaction.ApplicationNoOpTxn(
+                sender=self.user_address,
+                sp=sp,
+                index=self.app_id,
+                app_args=[b"accept_manager"],
+            )
+        ]
+        return self._submit(txns, additional_fees=0)

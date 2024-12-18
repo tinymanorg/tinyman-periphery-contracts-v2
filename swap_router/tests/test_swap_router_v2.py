@@ -79,6 +79,7 @@ class CreateAppTestCase(BaseTestCase):
             {
                 b"tinyman_app_id": AMM_APPLICATION_ID,
                 b"manager": decode_address(self.app_creator_address),
+                b"proposed_manager": None,
                 b"extra_collector": decode_address(self.app_creator_address),
                 b"talgo_app_address": decode_address(self.talgo_app_address),
                 b"talgo_app_id": self.talgo_app_id,
@@ -101,7 +102,7 @@ class SwapRouterTestCase(BaseTestCase):
 
     def create_swap_router_app(self):
         self.ledger.create_app(app_id=SWAP_ROUTER_APP_ID, approval_program=swap_router_program, creator=self.app_creator_address)
-        self.ledger.set_account_balance(SWAP_ROUTER_ADDRESS, MINIMUM_BALANCE + 1_000_000)
+        self.ledger.set_account_balance(SWAP_ROUTER_ADDRESS, MINIMUM_BALANCE)
         self.ledger.set_global_state(
             SWAP_ROUTER_APP_ID,
             {
@@ -186,7 +187,7 @@ class SwapTestCase(SwapRouterTestCase):
         self.ledger.opt_in_asset(SWAP_ROUTER_ADDRESS, self.asset_b_id)
         self.ledger.opt_in_asset(SWAP_ROUTER_ADDRESS, self.asset_c_id)
         self.ledger.opt_in_asset(SWAP_ROUTER_ADDRESS, self.asset_d_id)
-        self.ledger.move(3 * MINIMUM_BALANCE, sender=self.user_addr, receiver=SWAP_ROUTER_ADDRESS)
+        self.ledger.move(5 * MINIMUM_BALANCE, sender=self.user_addr, receiver=SWAP_ROUTER_ADDRESS)
 
     def test_multi_hop_swap(self):
         self.reset_ledger()
@@ -588,7 +589,9 @@ class SwapTestCase(SwapRouterTestCase):
         pools = [pool_0_address, self.talgo_app_address, pool_1_address, pool_2_address, pool_3_address]
         client.swap(input_amount=1000, output_amount=1, route=route, pools=pools)
 
-        logs = self.ledger.last_block[b'txns'][1][b'dt'].get(b'lg')
+        app_txn = [txn for txn in self.ledger.last_block[b'txns'] if txn[b"txn"].get(b"apaa", [None])[0] == b"swap"][0]
+
+        logs = app_txn.get(b"dt", {}).get(b"lg", [])
         event_log = logs[0]
         self.assertEqual(event_log[:4], self.swap_event_selector)
         self.assertEqual(int.from_bytes(event_log[4:12], 'big'), route[0])
@@ -596,8 +599,86 @@ class SwapTestCase(SwapRouterTestCase):
         self.assertEqual(int.from_bytes(event_log[20:28], 'big'), input_amount)
         self.assertEqual(int.from_bytes(event_log[28:36], 'big'), output_amount)
 
-        inner_transactions = self.ledger.last_block[b'txns'][1][b'dt'][b'itx']
+        inner_transactions = app_txn[b'dt'][b'itx']
 
         itxn = inner_transactions[-1][b'txn']
         final_transfer_amount = itxn.get(b'aamt', itxn.get(b'amt', 0))
         self.assertEqual(final_transfer_amount, output_amount)
+
+
+class AdminTestCase(SwapRouterTestCase):
+
+    def setUp(self):
+        self.ledger = JigLedger()
+        self.create_amm_app()
+        self.create_talgo_app()
+        self.create_swap_router_app()
+        self.ledger.set_account_balance(SWAP_ROUTER_ADDRESS, 2 * MINIMUM_BALANCE, 0)
+        self.ledger.set_account_balance(self.user_addr, 1_000_000)
+
+    def test_set_new_manager(self):
+        sk, address1 = generate_account()
+        self.ledger.set_account_balance(address1, 1_000_000, 0)
+
+        client = SwapRouterClient(JigAlgod(self.ledger), SWAP_ROUTER_APP_ID, AMM_APPLICATION_ID, self.talgo_app_id, self.app_creator_address, self.app_creator_sk)
+        client.propose_manager(address1)
+        self.assertEqual(client.get_global(b"proposed_manager"), decode_address(address1))
+
+        client = SwapRouterClient(JigAlgod(self.ledger), SWAP_ROUTER_APP_ID, AMM_APPLICATION_ID, self.talgo_app_id, address1, sk)
+        client.accept_manager()
+        self.assertEqual(client.get_global(b"proposed_manager"), None)
+        self.assertEqual(client.get_global(b"manager"), decode_address(address1))
+
+    def test_set_new_manager_fail(self):
+        sk, address1 = generate_account()
+        self.ledger.set_account_balance(address1, 1_000_000, 0)
+
+        client = SwapRouterClient(JigAlgod(self.ledger), SWAP_ROUTER_APP_ID, AMM_APPLICATION_ID, self.talgo_app_id, self.user_addr, self.user_sk)
+        with self.assertRaises(LogicEvalError):
+            client.propose_manager(address1)
+
+        client = SwapRouterClient(JigAlgod(self.ledger), SWAP_ROUTER_APP_ID, AMM_APPLICATION_ID, self.talgo_app_id, self.app_creator_address, self.app_creator_sk)
+        client.propose_manager(address1)
+        self.assertEqual(client.get_global(b"proposed_manager"), decode_address(address1))
+
+        client = SwapRouterClient(JigAlgod(self.ledger), SWAP_ROUTER_APP_ID, AMM_APPLICATION_ID, self.talgo_app_id, self.user_addr, self.user_sk)
+        with self.assertRaises(LogicEvalError):
+            client.accept_manager()
+
+    def test_set_extra_collector(self):
+        client = SwapRouterClient(JigAlgod(self.ledger), SWAP_ROUTER_APP_ID, AMM_APPLICATION_ID, self.talgo_app_id, self.app_creator_address, self.app_creator_sk)
+        # set new extra collector
+        sk, address1 = generate_account()
+        client.set_extra_collector(address1)
+        self.assertEqual(client.get_global(b"extra_collector"), decode_address(address1))
+
+    def test_claim_extra(self):
+        self.ledger.add(SWAP_ROUTER_ADDRESS, 10_000, 0)
+        self.ledger.add(SWAP_ROUTER_ADDRESS, 10_000, self.talgo_asset_id)
+    
+        client = SwapRouterClient(JigAlgod(self.ledger), SWAP_ROUTER_APP_ID, AMM_APPLICATION_ID, self.talgo_app_id, self.app_creator_address, self.app_creator_sk)
+
+        # set new extra collector
+        sk, address1 = generate_account()
+        client.set_extra_collector(address1)
+
+        self.ledger.set_account_balance(address1, 1_000_000, 0)
+        self.ledger.set_account_balance(address1, 0, self.talgo_asset_id)
+
+        client = SwapRouterClient(JigAlgod(self.ledger), SWAP_ROUTER_APP_ID, AMM_APPLICATION_ID, self.talgo_app_id, address1, sk)
+        
+        # claim extra ASA
+        client.claim_extra(self.talgo_asset_id)
+        app_txn = [txn for txn in self.ledger.last_block[b'txns'] if txn[b"txn"].get(b"apaa", [None])[0] == b"claim_extra"][0]
+        inner_transactions = app_txn[b'dt'][b'itx']
+        itxn = inner_transactions[-1][b'txn']
+        transfer_amount = itxn.get(b'aamt', itxn.get(b'amt', 0))
+        self.assertEqual(transfer_amount, 10_000)
+
+        # claim extra Algo
+        client.claim_extra(0)
+        app_txn = [txn for txn in self.ledger.last_block[b'txns'] if txn[b"txn"].get(b"apaa", [None])[0] == b"claim_extra"][0]
+        inner_transactions = app_txn[b'dt'][b'itx']
+        itxn = inner_transactions[-1][b'txn']
+        transfer_amount = itxn.get(b'aamt', itxn.get(b'amt', 0))
+        self.assertEqual(transfer_amount, 10_000)

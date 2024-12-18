@@ -11,7 +11,8 @@ router:
     create_application
     update_application
     asset_opt_in
-    set_manager
+    propose_manager
+    accept_manager
     set_extra_collector
     claim_extra
     noop
@@ -29,6 +30,7 @@ func create_application(tinyman_app_id: int, talgo_app_id: int, talgo_asset_id: 
     app_global_put("talgo_asset_id", talgo_asset_id)
     app_global_put("tinyman_app_id", tinyman_app_id)
     app_global_put("manager", Txn.Sender)
+    app_global_put("proposed_manager", "")
     app_global_put("extra_collector", Txn.Sender)
     return
 end
@@ -75,53 +77,69 @@ func swap(input_amount: int, output_amount: int, route: int[8], pools: Address[8
     if Gtxn[input_txn_index].TypeEnum == Pay:
         assert(Gtxn[input_txn_index].Receiver == Global.CurrentApplicationAddress)
         assert(!input_asset_id)
-        input_amount = Gtxn[input_txn_index].Amount
+        assert(Gtxn[input_txn_index].Amount == input_amount)
     elif Gtxn[input_txn_index].TypeEnum == Axfer:
         assert(Gtxn[input_txn_index].AssetReceiver == Global.CurrentApplicationAddress)
         assert(input_asset_id == Gtxn[input_txn_index].XferAsset)
-        input_amount = Gtxn[input_txn_index].AssetAmount
+        assert(Gtxn[input_txn_index].AssetAmount == input_amount)
     else:
         Error()
     end
     assert(input_amount)
 
     int tmp_asset_in
-    int temp_asset_out
+    int tmp_asset_out
     bytes pool_address
 
     int tmp_swap_amount = input_amount
     for i in 0:swaps:
         tmp_asset_in = route[i]
-        temp_asset_out = route[i+1]
+        tmp_asset_out = route[i+1]
         pool_address = pools[i]
         if (pool_address == app_global_get("talgo_app_address")) && (tmp_asset_in == 0):
             tmp_swap_amount = talgo_mint(tmp_swap_amount)
-        elif (pool_address == app_global_get("talgo_app_address")) && (temp_asset_out == 0):
+        elif (pool_address == app_global_get("talgo_app_address")) && (tmp_asset_out == 0):
             tmp_swap_amount = talgo_burn(tmp_swap_amount)
         else:
-            tmp_swap_amount, _ = tinyman_swap(pool_address, "fixed-input", tmp_asset_in, temp_asset_out, tmp_swap_amount, 1)
+            tmp_swap_amount, _ = tinyman_swap(pool_address, "fixed-input", tmp_asset_in, tmp_asset_out, tmp_swap_amount, 1)
         end
     end
-    int final_output_amount = tmp_swap_amount
+    assert(tmp_asset_out == output_asset_id)
 
+    int final_output_amount = tmp_swap_amount
     assert(final_output_amount >= output_amount)
-    assert(temp_asset_out == output_asset_id)
+
     # Transfer output to user
     transfer(output_asset_id, final_output_amount, Global.CurrentApplicationAddress, user_address)
 
-    log(concat(concat(concat(concat(method("swap(uint64,uint64,uint64,uint64)"), itob(input_asset_id)), itob(output_asset_id)), itob(input_amount)), itob(final_output_amount)))
+    log(ARC28Event("swap(uint64,uint64,uint64,uint64)", itob(input_asset_id), itob(output_asset_id), itob(input_amount), itob(final_output_amount)))
     return
 end
 
 
-# TODO: change to 2 step process
+# The current manager can propose a new manager. The manager will not be changed until the proposed manager calls accept_manager.
+# The current manager can propose multiple times, overwriting the previous proposal.
+# permission: manager
 @public()
-func set_manager(new_manager: bytes[32]):
-    # Set a new manager, only manager can call this method
-    # Txn: AppCall from manager
-
+func propose_manager(new_manager: bytes[32]):
     assert(Txn.Sender == app_global_get("manager"))
-    app_global_put("manager", new_manager)
+
+    app_global_put("proposed_manager", new_manager)
+    log(ARC28Event("propose_manager(address)", new_manager))
+    return
+end
+
+
+# The proposed manager must call this function to become the manager.
+# permission: proposed_manager
+@public()
+func accept_manager():
+    bytes proposed_manager = app_global_get("proposed_manager")
+    assert(Txn.Sender == proposed_manager)
+
+    app_global_put("manager", proposed_manager)
+    app_global_put("proposed_manager", "")
+    log(ARC28Event("accept_manager(address)", proposed_manager))
     return
 end
 
