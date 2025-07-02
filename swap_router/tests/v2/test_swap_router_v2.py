@@ -1,6 +1,3 @@
-from unittest import TestCase
-from unittest.mock import ANY
-
 from Cryptodome.Hash import SHA512
 from algojig import TealishProgram
 from algojig import get_suggested_params
@@ -13,14 +10,14 @@ from algosdk import transaction
 from algosdk.logic import get_application_address
 from algosdk.constants import ZERO_ADDRESS
 
-from tests.constants import MAX_ASSET_AMOUNT, APPLICATION_ID as AMM_APPLICATION_ID
+from swap_router.tests.v1.constants import MAX_ASSET_AMOUNT, APPLICATION_ID as AMM_APPLICATION_ID
 from tests.core import BaseTestCase
 from tests.utils import int_array, bytes_array, JigAlgod
 
-from sdk.client import SwapRouterClient
+from swap_router.sdk.v2.client import SwapRouterClient
 
-swap_router_program = TealishProgram('contracts/swap_router_v2_approval.tl')
-swap_clear_state_program = TealishProgram('contracts/swap_router_v2_clear_state.tl')
+swap_router_program = TealishProgram('contracts/v2/swap_router_v2_approval.tl')
+swap_clear_state_program = TealishProgram('contracts/v2/swap_router_v2_clear_state.tl')
 
 SWAP_ROUTER_APP_ID = 2001
 SWAP_ROUTER_ADDRESS = get_application_address(SWAP_ROUTER_APP_ID)
