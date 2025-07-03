@@ -12,7 +12,7 @@ from algosdk.encoding import decode_address
 from algosdk.future import transaction
 from algosdk.logic import get_application_address
 
-from swap_router.tests.v1.constants import MAX_ASSET_AMOUNT, APPLICATION_ID as AMM_APPLICATION_ID
+from swap_router.tests.common import MAX_ASSET_AMOUNT, AMM_APPLICATION_ID as AMM_APPLICATION_ID
 from tests.core import BaseTestCase
 
 swap_router_program = TealishProgram('contracts/v1/swap_router/swap_router_approval.tl')

@@ -10,32 +10,14 @@ from algosdk import transaction
 from algosdk.logic import get_application_address
 from algosdk.constants import ZERO_ADDRESS
 
-from swap_router.tests.v1.constants import MAX_ASSET_AMOUNT, APPLICATION_ID as AMM_APPLICATION_ID
-from tests.core import BaseTestCase
-from tests.utils import int_array, bytes_array, JigAlgod
-
 from swap_router.sdk.v2.client import SwapRouterClient
+from swap_router.tests.common import MINIMUM_BALANCE, MAX_ASSET_AMOUNT, AMM_APPLICATION_ID, SWAP_ROUTER_APP_ID, SWAP_ROUTER_ADDRESS
+
+from tests.core import BaseTestCase
+from tests.utils import bytes_array, int_array, get_event_signature, get_selector, JigAlgod
 
 swap_router_program = TealishProgram('contracts/v2/swap_router_v2_approval.tl')
 swap_clear_state_program = TealishProgram('contracts/v2/swap_router_v2_clear_state.tl')
-
-SWAP_ROUTER_APP_ID = 2001
-SWAP_ROUTER_ADDRESS = get_application_address(SWAP_ROUTER_APP_ID)
-
-MINIMUM_BALANCE = 100_000
-
-
-def get_event_signature(event_name, event_args):
-    arg_string = ",".join(str(arg.type) for arg in event_args)
-    event_signature = "{}({})".format(event_name, arg_string)
-    return event_signature
-
-
-def get_selector(signature):
-    sha_512_256_hash = SHA512.new(truncate="256")
-    sha_512_256_hash.update(signature.encode("utf-8"))
-    selector = sha_512_256_hash.digest()[:4]
-    return selector
 
 
 class CreateAppTestCase(BaseTestCase):
