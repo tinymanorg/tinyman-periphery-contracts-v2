@@ -8,8 +8,8 @@ from algosdk.constants import ZERO_ADDRESS
 
 from tinyman.utils import int_to_bytes
 
-from sdk.base_client import BaseClient
-from sdk.utils import int_array, bytes_array
+from swap_router.sdk.base_client import BaseClient
+from swap_router.sdk.utils import int_array, bytes_array
 
 
 class SwapRouterClient(BaseClient):

@@ -13,8 +13,8 @@ from algosdk.constants import ZERO_ADDRESS
 from swap_router.sdk.v2.client import SwapRouterClient
 from swap_router.tests.common import MINIMUM_BALANCE, MAX_ASSET_AMOUNT, AMM_APPLICATION_ID, SWAP_ROUTER_APP_ID, SWAP_ROUTER_ADDRESS
 
-from tests.core import BaseTestCase
-from tests.utils import bytes_array, int_array, get_event_signature, get_selector, JigAlgod
+from swap_router.tests.core import BaseTestCase
+from swap_router.tests.utils import bytes_array, int_array, get_event_signature, get_selector, JigAlgod
 
 swap_router_program = TealishProgram('contracts/v2/swap_router_v2_approval.tl')
 swap_clear_state_program = TealishProgram('contracts/v2/swap_router_v2_clear_state.tl')

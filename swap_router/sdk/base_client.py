@@ -4,7 +4,7 @@ from algosdk import transaction
 from algosdk.logic import get_application_address
 
 from tinyman.utils import TransactionGroup
-from sdk.struct import get_struct, get_box_costs
+from swap_router.sdk.struct import get_struct, get_box_costs
 
 
 class BaseClient():
