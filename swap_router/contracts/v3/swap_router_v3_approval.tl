@@ -66,11 +66,11 @@ func start_swap_group(input_asset_id: int, output_asset_id: int, total_input_amo
     if Gtxn[input_txn_index].TypeEnum == Pay:
         assert(!input_asset_id)
         assert(Gtxn[input_txn_index].Receiver == Global.CurrentApplicationAddress)
-        assert(Gtxn[input_txn_index].Amount == input_amount)
+        assert(Gtxn[input_txn_index].Amount == total_input_amount)
     elif Gtxn[input_txn_index].TypeEnum == Axfer:
         assert(Gtxn[input_txn_index].XferAsset == input_asset_id)
         assert(Gtxn[input_txn_index].AssetReceiver == Global.CurrentApplicationAddress)
-        assert(Gtxn[input_txn_index].AssetAmount == input_amount)
+        assert(Gtxn[input_txn_index].AssetAmount == total_input_amount)
     else:
         Error()
     end
@@ -86,10 +86,10 @@ func start_swap_group(input_asset_id: int, output_asset_id: int, total_input_amo
         bytes apaa0 = Gtxn[txn_index + i].ApplicationArgs[0]
         if apaa0 == "swap":
 
-            tmp_total_input_amount = tmp_total_input_amount + btoi(Gtxn[txn_index].ApplicationArgs[1])
+            tmp_total_input_amount = tmp_total_input_amount + btoi(Gtxn[txn_index + i].ApplicationArgs[1])
 
-            int[8] route = Cast(Gtxn[txn_index].ApplicationArgs[3], int[8])
-            int swaps = btoi(Gtxn[txn_index].ApplicationArgs[5])
+            int[8] route = Cast(Gtxn[txn_index + i].ApplicationArgs[2], int[8])
+            int swaps = btoi(Gtxn[txn_index + i].ApplicationArgs[4])
 
             assert(route[0] == input_asset_id)
             assert(route[swaps] == output_asset_id)
@@ -108,13 +108,13 @@ func start_swap_group(input_asset_id: int, output_asset_id: int, total_input_amo
     assert(Gtxn[txn_index + index_diff].OnCompletion == NoOp)
     assert(Gtxn[txn_index + index_diff].ApplicationID == Global.CurrentApplicationID)
     assert(Gtxn[txn_index + index_diff].ApplicationArgs[0] == "end_swap_group")
-    assert(Gtxn[txn_index + index_diff].ApplicationArgs[1] == input_asset_id)
-    assert(Gtxn[txn_index + index_diff].ApplicationArgs[2] == output_asset_id)
-    assert(Gtxn[txn_index + index_diff].ApplicationArgs[3] == total_input_amount)
+    assert(Gtxn[txn_index + index_diff].ApplicationArgs[1] == itob(input_asset_id))
+    assert(Gtxn[txn_index + index_diff].ApplicationArgs[2] == itob(output_asset_id))
+    assert(Gtxn[txn_index + index_diff].ApplicationArgs[3] == itob(total_input_amount))
 
-    int current_output_asset_balance
+    int current_output_asset_balance = 0
     if output_asset_id:
-        current_output_asset_balance, _ = asset_holding_get(AssetBalance, Global.CurrentApplicationAddress, output_asset_id)
+        _, current_output_asset_balance = asset_holding_get(AssetBalance, Global.CurrentApplicationAddress, output_asset_id)
     else:
         current_output_asset_balance = balance(Global.CurrentApplicationAddress)
     end
