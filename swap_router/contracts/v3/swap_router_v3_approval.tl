@@ -135,11 +135,11 @@ func end_swap_group(input_asset_id: int, output_asset_id: int, total_input_amoun
     assert(Gtxn[txn_index - index_diff].OnCompletion == NoOp)
     assert(Gtxn[txn_index - index_diff].ApplicationID == Global.CurrentApplicationID)
     assert(Gtxn[txn_index - index_diff].ApplicationArgs[0] == "start_swap_group")
-    assert(Gtxn[txn_index - index_diff].ApplicationArgs[4] == index_diff)
+    assert(Gtxn[txn_index - index_diff].ApplicationArgs[4] == itob(index_diff))
 
-    int current_output_asset_balance
+    int current_output_asset_balance = 0
     if output_asset_id:
-        current_output_asset_balance, _ = asset_holding_get(AssetBalance, Global.CurrentApplicationAddress, output_asset_id)
+        _, current_output_asset_balance = asset_holding_get(AssetBalance, Global.CurrentApplicationAddress, output_asset_id)
     else:
         current_output_asset_balance = balance(Global.CurrentApplicationAddress)
     end
