@@ -37,9 +37,11 @@ class SwapRouterClient(BaseClient):
         inner_txns = sum(params.get("inner_txns", 0) for params in transaction_parameters)
         return self._submit(transactions, additional_fees=inner_txns)
 
-    def prepare_swap_group_transaction_parameters(self, input_asset_id, output_asset_id, input_amount, output_amount, routes, pool_mapping, app_asset_optins=[]):
+    def prepare_swap_group_transaction_parameters(self, input_asset_id, output_asset_id, input_amount_mapping, output_amount, routes, pool_mapping, app_asset_optins=[]):
         transaction_dicts = []
         inner_transaction_count = 0
+
+        total_input_amount = sum(input_amount_mapping)
 
         # Prepare app asset opt-in transactions.
         assert len(app_asset_optins) <= 8
@@ -61,7 +63,7 @@ class SwapRouterClient(BaseClient):
             dict(
                 type="axfer" if input_asset_id else "pay",
                 receiver=self.application_address,
-                amount=input_amount,
+                amount=total_input_amount,
                 asset_id=input_asset_id,
             ),
         )
@@ -100,7 +102,7 @@ class SwapRouterClient(BaseClient):
 
         swap_txn_dicts = []
         # Prepare `swap` transactions.
-        for route, pool_addresses, ref_group in zip(routes, pool_mapping, ref_groups):
+        for route, pool_addresses, input_amount, ref_group in zip(routes, pool_mapping, input_amount_mapping, ref_groups):
             route_arg = int_array(elements=route, size=8, default=0)
             pools_arg = bytes_array(elements=[decode_address(addr) for addr in pool_addresses], size=8, default=decode_address(ZERO_ADDRESS))
             swaps = len(pool_addresses)
@@ -129,16 +131,16 @@ class SwapRouterClient(BaseClient):
                         assets=refs["assets"],
                     )
                 )
-        
+
         if is_talgo_app_used:
             swap_txn_dicts.append(
                 dict(
                     type="appl",
                     app_id=self.app_id,
                     args=["noop"],
-                    apps=[self.amm_app_id],
-                    accounts=refs["accounts"],
-                    assets=refs["assets"],
+                    apps=[self.amm_app_id, self.talgo_app_id],
+                    accounts=self.talgo_app_accounts[1:],
+                    assets=[self.talgo_asset_id]
                 )
             )
 
@@ -153,7 +155,7 @@ class SwapRouterClient(BaseClient):
                     "start_swap_group",
                     int_to_bytes(input_asset_id),
                     int_to_bytes(output_asset_id),
-                    int_to_bytes(input_amount),
+                    int_to_bytes(total_input_amount),
                     int_to_bytes(index_diff)
                 ],
                 assets=[output_asset_id]
@@ -170,7 +172,7 @@ class SwapRouterClient(BaseClient):
                     "end_swap_group",
                     int_to_bytes(input_asset_id),
                     int_to_bytes(output_asset_id),
-                    int_to_bytes(input_amount),
+                    int_to_bytes(total_input_amount),
                     int_to_bytes(output_amount),
                     int_to_bytes(index_diff)
                 ],
@@ -180,7 +182,10 @@ class SwapRouterClient(BaseClient):
 
         return transaction_dicts
 
-    def get_transactions_from_parameters(self, transaction_parameters, sp):
+    def get_transactions_from_parameters(self, transaction_parameters, sp=None):
+        if sp is None:
+            sp = self.get_suggested_params()
+
         transactions = []
         for params in transaction_parameters:
             if params["type"] == "pay":

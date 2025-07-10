@@ -371,6 +371,41 @@ class SwapTestCase(SwapRouterTestCase):
 
         block = self.ledger.last_block
         block_txns = block[b'txns']
+    
+    def test_multi_route_swap_with_client(self):
+        self.reset_ledger()
+        self.create_pools_for_multi_route()
+
+        # Prepare transactions.
+        total_input_amount = 100_000
+        min_output_amount = 90_000
+        input_asset_id = self.asset_a_id
+        output_asset_id = self.asset_b_id
+
+        routes = [
+            [self.asset_a_id, self.talgo_asset_id, 0, self.asset_b_id],
+            [self.asset_a_id, self.asset_b_id]
+        ]
+
+        pool_mapping = [
+            [self.pool_0_address, self.talgo_app_address, self.pool_1_address],
+            [self.pool_4_address]
+        ]
+        inner_txn_count = 1 + 3 * (len(pool_mapping[0]) + len(pool_mapping[1]))
+        client = SwapRouterClient(JigAlgod(self.ledger), SWAP_ROUTER_APP_ID, AMM_APPLICATION_ID, self.talgo_app_id, self.user_addr, self.user_sk)
+        transactions = client.prepare_swap_group_transaction_parameters(
+            input_asset_id=input_asset_id,
+            output_asset_id=output_asset_id,
+            input_amount_mapping=[total_input_amount // 2, total_input_amount // 2],
+            output_amount=min_output_amount,
+            routes=routes,
+            pool_mapping=pool_mapping
+        )
+        transactions = client.get_transactions_from_parameters(transaction_parameters=transactions)
+        client._submit(transactions, additional_fees=inner_txn_count)
+
+        block = self.ledger.last_block
+        block_txns = block[b'txns']
 
 
 class AdminTestCase(SwapRouterTestCase):
