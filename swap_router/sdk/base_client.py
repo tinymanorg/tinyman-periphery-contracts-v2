@@ -119,9 +119,12 @@ class BaseClient():
 
     def get_optin_if_needed_txn(self, sender, asset_id):
         if not self.is_opted_in(sender, asset_id):
-            txn = transaction.AssetOptInTxn(
-                sender=sender,
-                sp=self.get_suggested_params(),
-                index=asset_id,
-            )
-            return txn
+            return self.get_optin_txn(sender, asset_id)
+
+    def get_optin_txn(self, sender, asset_id):
+        txn = transaction.AssetOptInTxn(
+            sender=sender,
+            sp=self.get_suggested_params(),
+            index=asset_id,
+        )
+        return txn

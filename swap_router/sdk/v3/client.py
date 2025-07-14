@@ -23,16 +23,18 @@ class SwapRouterClient(BaseClient):
         self.talgo_asset_id = state[b"talgo_asset_id"]
         self.talgo_app_accounts = [encode_address(state[b"account_%i" % i]) for i in range(5)]
 
-    def swap(self, input_amount, output_amount, route, pools):
-        optins = [a for a in route if a and not self.is_opted_in(self.application_address, a)]
+    def swap(self, input_asset_id, output_asset_id, input_amount_mapping, output_amount, routes, pool_mapping):
+        app_asset_optins = []
+        for route in routes:
+            app_asset_optins.extend([aid for aid in route if aid and not self.is_opted_in(self.application_address, aid)])
 
         transactions = [
-            self.get_optin_if_needed_txn(self.user_address, route[-1])
+            self.get_optin_if_needed_txn(self.user_address, routes[-1])
         ]
 
         sp = self.get_suggested_params()
-        transaction_parameters = self.prepare_swap_group_transaction_parameters(input_amount, output_amount, route, pools, optins)
-        transactions.extend(self.get_transactions_from_parameters(transaction_parameters))
+        transaction_parameters = self.prepare_swap_group_transaction_parameters(input_asset_id, output_asset_id, input_amount_mapping, output_amount, routes, pool_mapping, app_asset_optins)
+        transactions.extend(self.get_transactions_from_parameters(transaction_parameters, sp))
 
         inner_txns = sum(params.get("inner_txns", 0) for params in transaction_parameters)
         return self._submit(transactions, additional_fees=inner_txns)
