@@ -2,8 +2,8 @@ from algosdk import transaction
 from algosdk.encoding import decode_address, encode_address
 from algosdk.logic import get_application_address
 from algosdk.constants import ZERO_ADDRESS
-from .base_client import BaseClient
-from .utils import int_array, bytes_array
+from ..base_client import BaseClient
+from ..utils import int_array, bytes_array
 
 
 class SwapRouterClient(BaseClient):
@@ -12,6 +12,7 @@ class SwapRouterClient(BaseClient):
         super().__init__(algod, app_id, user_address, user_sk)
         self.amm_app_id = tinyman_amm_app_id
         self.talgo_app_id = talgo_app_id
+
         state = self.get_globals(talgo_app_id)
         self.talgo_app_address = encode_address(state[b"account_0"])
         self.talgo_asset_id = state[b"talgo_asset_id"]
@@ -134,7 +135,7 @@ class SwapRouterClient(BaseClient):
                 ))
         inner_txns = sum(tx.get("inner_txns", 0) for tx in transactions)
         return self._submit(txns, additional_fees=inner_txns)
-    
+
     def claim_extra(self, asset_id):
         sp = self.get_suggested_params()
         txns = [

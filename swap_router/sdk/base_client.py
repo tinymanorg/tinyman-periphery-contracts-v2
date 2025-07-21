@@ -1,11 +1,10 @@
-from base64 import b64decode, b64encode
 import time
-from algosdk.encoding import decode_address
-from tinyman.utils import TransactionGroup, int_to_bytes
+from base64 import b64decode, b64encode
 from algosdk import transaction
-from algosdk.encoding import decode_address, encode_address
 from algosdk.logic import get_application_address
-from algosdk.account import generate_account
+
+from tinyman.utils import TransactionGroup
+from swap_router.sdk.struct import get_struct, get_box_costs
 
 
 class BaseClient():
@@ -18,13 +17,13 @@ class BaseClient():
         self.add_key(user_address, user_sk)
         self.current_timestamp = None
         self.simulate = False
-    
+
     def get_suggested_params(self):
         return self.algod.suggested_params()
-    
+
     def get_current_timestamp(self):
         return self.current_timestamp or time.time()
-    
+
     def _submit(self, transactions, additional_fees=0):
         transactions = self.flatten_transactions(transactions)
         fee = transactions[0].fee
@@ -45,7 +44,7 @@ class BaseClient():
         else:
             txn_info = txn_group.submit(self.algod, wait=True)
         return txn_info
-    
+
     def flatten_transactions(self, txns):
         result = []
         if isinstance(txns, transaction.Transaction):
@@ -54,23 +53,17 @@ class BaseClient():
             for txn in txns:
                 result += self.flatten_transactions(txn)
         return result
-    
+
+    def calculate_min_balance(self, accounts=0, assets=0, boxes=None):
+        cost = 0
+        cost += accounts * 100_000
+        cost += assets * 100_000
+        cost += get_box_costs(boxes or {})
+        return cost
+
     def add_key(self, address, key):
         self.keys[address] = key
 
-    def get_global(self, key, default=None, app_id=None):
-        app_id = app_id or self.app_id
-        global_state = {s["key"]: s["value"] for s in self.algod.application_info(app_id)["params"]["global-state"]}
-        key = b64encode(key).decode()
-        if key in global_state:
-            value = global_state[key]
-            if value["type"] == 2:
-                return value["uint"]
-            else:
-                return b64decode(value["bytes"])
-        else:
-            return default
-        
     def get_globals(self, app_id=None):
         app_id = app_id or self.app_id
         gs = self.algod.application_info(app_id)["params"]["global-state"]
@@ -86,6 +79,26 @@ class BaseClient():
         state = dict(sorted(state.items(), key=lambda x: x[0]))
         return state
 
+    def get_global(self, key, default=None, app_id=None):
+        app_id = app_id or self.app_id
+        global_state = {s["key"]: s["value"] for s in self.algod.application_info(app_id)["params"]["global-state"]}
+        key = b64encode(key).decode()
+        if key in global_state:
+            value = global_state[key]
+            if value["type"] == 2:
+                return value["uint"]
+            else:
+                return b64decode(value["bytes"])
+        else:
+            return default
+
+    def get_box(self, box_name, struct_name, app_id=None):
+        app_id = app_id or self.app_id
+        box_value = b64decode(self.algod.application_box_by_name(app_id, box_name)["value"])
+        struct_class = get_struct(struct_name)
+        struct = struct_class(box_value)
+        return struct
+
     def box_exists(self, box_name, app_id=None):
         app_id = app_id or self.app_id
         try:
@@ -95,6 +108,9 @@ class BaseClient():
             return False
 
     def is_opted_in(self, address, asset_id):
+        if asset_id == 0:
+            return True
+
         try:
             self.algod.account_asset_info(address, asset_id)
             return True
@@ -103,9 +119,12 @@ class BaseClient():
 
     def get_optin_if_needed_txn(self, sender, asset_id):
         if not self.is_opted_in(sender, asset_id):
-            txn = transaction.AssetOptInTxn(
-                sender=sender,
-                sp=self.get_suggested_params(),
-                index=asset_id,
-            )
-            return txn
+            return self.get_optin_txn(sender, asset_id)
+
+    def get_optin_txn(self, sender, asset_id):
+        txn = transaction.AssetOptInTxn(
+            sender=sender,
+            sp=self.get_suggested_params(),
+            index=asset_id,
+        )
+        return txn

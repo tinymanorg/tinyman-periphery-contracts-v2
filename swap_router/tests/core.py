@@ -5,7 +5,7 @@ from algojig import get_suggested_params
 from algosdk.encoding import decode_address
 from algosdk import transaction
 
-from .constants import *
+from .common import *
 from .utils import get_pool_logicsig_bytecode
 
 
@@ -73,7 +73,7 @@ class BaseTestCase(unittest.TestCase):
             self.ledger.set_account_balance(self.app_creator_address, 1_000_000)
 
         self.ledger.create_app(
-            app_id=APPLICATION_ID,
+            app_id=AMM_APPLICATION_ID,
             approval_program=amm_approval_program,
             creator=self.app_creator_address,
             local_ints=APP_LOCAL_INTS,
@@ -83,9 +83,9 @@ class BaseTestCase(unittest.TestCase):
         )
         # 100_000 for basic min balance requirement
         # + 100_000 for increase_cost_budget app creation min balance requirement
-        self.ledger.set_account_balance(APPLICATION_ADDRESS, 200_000)
+        self.ledger.set_account_balance(AMM_APPLICATION_ADDRESS, 200_000)
         self.ledger.set_global_state(
-            APPLICATION_ID,
+            AMM_APPLICATION_ID,
             {
                 b'fee_collector': decode_address(self.app_creator_address),
                 b'fee_manager': decode_address(self.app_creator_address),
@@ -94,7 +94,7 @@ class BaseTestCase(unittest.TestCase):
         )
 
     def bootstrap_pool(self, asset_1_id, asset_2_id):
-        lsig = get_pool_logicsig_bytecode(amm_pool_template, APPLICATION_ID, asset_1_id, asset_2_id)
+        lsig = get_pool_logicsig_bytecode(amm_pool_template, AMM_APPLICATION_ID, asset_1_id, asset_2_id)
         pool_address = lsig.address()
 
         if asset_2_id:
@@ -110,7 +110,7 @@ class BaseTestCase(unittest.TestCase):
         self.ledger.set_account_balance(pool_address, minimum_balance + 100_000)
 
         # Rekey to application address
-        self.ledger.set_auth_addr(pool_address, APPLICATION_ADDRESS)
+        self.ledger.set_auth_addr(pool_address, AMM_APPLICATION_ADDRESS)
 
         # Opt-in to assets
         self.ledger.set_account_balance(pool_address, 0, asset_id=asset_1_id)
@@ -118,18 +118,18 @@ class BaseTestCase(unittest.TestCase):
             self.ledger.set_account_balance(pool_address, 0, asset_id=asset_2_id)
 
         # Create pool token
-        pool_token_asset_id = self.ledger.create_asset(asset_id=None, params=dict(creator=APPLICATION_ADDRESS))
+        pool_token_asset_id = self.ledger.create_asset(asset_id=None, params=dict(creator=AMM_APPLICATION_ADDRESS))
 
         # Transfer Algo to application address
-        self.ledger.move(100_000, asset_id=0, sender=pool_address, receiver=APPLICATION_ADDRESS)
+        self.ledger.move(100_000, asset_id=0, sender=pool_address, receiver=AMM_APPLICATION_ADDRESS)
 
         # Transfer pool tokens from application adress to pool
-        self.ledger.set_account_balance(APPLICATION_ADDRESS, 0, asset_id=pool_token_asset_id)
+        self.ledger.set_account_balance(AMM_APPLICATION_ADDRESS, 0, asset_id=pool_token_asset_id)
         self.ledger.set_account_balance(pool_address, POOL_TOKEN_TOTAL_SUPPLY, asset_id=pool_token_asset_id)
 
         self.ledger.set_local_state(
             address=pool_address,
-            app_id=APPLICATION_ID,
+            app_id=AMM_APPLICATION_ID,
             state={
                 b'asset_1_id': asset_1_id,
                 b'asset_2_id': asset_2_id,
@@ -162,7 +162,7 @@ class BaseTestCase(unittest.TestCase):
 
         self.ledger.update_local_state(
             address=pool_address,
-            app_id=APPLICATION_ID,
+            app_id=AMM_APPLICATION_ID,
             state_delta={
                 b'asset_1_reserves': asset_1_reserves,
                 b'asset_2_reserves': asset_2_reserves,
@@ -177,7 +177,7 @@ class BaseTestCase(unittest.TestCase):
     def set_pool_protocol_fees(self, asset_1_protocol_fees, asset_2_protocol_fees):
         self.ledger.update_local_state(
             address=self.pool_address,
-            app_id=APPLICATION_ID,
+            app_id=AMM_APPLICATION_ID,
             state_delta={
                 b'asset_1_protocol_fees': asset_1_protocol_fees,
                 b'asset_2_protocol_fees': asset_2_protocol_fees,
@@ -216,7 +216,7 @@ class BaseTestCase(unittest.TestCase):
             transaction.ApplicationNoOpTxn(
                 sender=self.user_addr,
                 sp=self.sp,
-                index=APPLICATION_ID,
+                index=AMM_APPLICATION_ID,
                 app_args=[METHOD_ADD_INITIAL_LIQUIDITY],
                 foreign_assets=[self.pool_token_asset_id],
                 accounts=[self.pool_address],
@@ -260,7 +260,7 @@ class BaseTestCase(unittest.TestCase):
             transaction.ApplicationNoOpTxn(
                 sender=self.user_addr,
                 sp=self.sp,
-                index=APPLICATION_ID,
+                index=AMM_APPLICATION_ID,
                 app_args=[METHOD_ADD_LIQUIDITY, mode, min_output],
                 foreign_assets=[self.pool_token_asset_id],
                 accounts=[self.pool_address],
@@ -281,7 +281,7 @@ class BaseTestCase(unittest.TestCase):
             transaction.ApplicationNoOpTxn(
                 sender=self.user_addr,
                 sp=self.sp,
-                index=APPLICATION_ID,
+                index=AMM_APPLICATION_ID,
                 app_args=[METHOD_REMOVE_LIQUIDITY, min_output_1, min_output_2],
                 foreign_assets=[self.asset_1_id, self.asset_2_id],
                 accounts=[self.pool_address],
@@ -304,7 +304,7 @@ class BaseTestCase(unittest.TestCase):
             transaction.ApplicationNoOpTxn(
                 sender=self.user_addr,
                 sp=self.sp,
-                index=APPLICATION_ID,
+                index=AMM_APPLICATION_ID,
                 app_args=[METHOD_REMOVE_LIQUIDITY, min_output_1, min_output_2],
                 foreign_assets=[asset_id],
                 accounts=[self.pool_address],
@@ -318,7 +318,7 @@ class BaseTestCase(unittest.TestCase):
             transaction.ApplicationNoOpTxn(
                 sender=sender,
                 sp=self.sp,
-                index=APPLICATION_ID,
+                index=AMM_APPLICATION_ID,
                 app_args=[METHOD_CLAIM_FEES],
                 foreign_assets=[self.asset_1_id, self.asset_2_id],
                 accounts=[self.pool_address, fee_collector],
@@ -332,7 +332,7 @@ class BaseTestCase(unittest.TestCase):
             transaction.ApplicationNoOpTxn(
                 sender=sender,
                 sp=self.sp,
-                index=APPLICATION_ID,
+                index=AMM_APPLICATION_ID,
                 app_args=[METHOD_CLAIM_EXTRA],
                 foreign_assets=[asset_id],
                 accounts=[address, fee_collector],

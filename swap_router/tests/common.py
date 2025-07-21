@@ -36,12 +36,13 @@ PRICE_SCALE_FACTOR = 2**64      # 18446744073709551616
 BLOCK_TIME_DELTA = 1000
 BYTE_ZERO = b'\x00\x00\x00\x00\x00\x00\x00\x00'
 
+MINIMUM_BALANCE = 100_000
 MAX_UINT64 = 2**64 - 1    # 18446744073709551615
 MAX_ASSET_AMOUNT = MAX_UINT64
 POOL_TOKEN_TOTAL_SUPPLY = MAX_ASSET_AMOUNT
 ALGO_ASSET_ID = 0
-APPLICATION_ID = 1001
-APPLICATION_ADDRESS = get_application_address(APPLICATION_ID)
+AMM_APPLICATION_ID = 1001
+AMM_APPLICATION_ADDRESS = get_application_address(AMM_APPLICATION_ID)
 
 # State
 APP_LOCAL_INTS = 12
@@ -59,3 +60,6 @@ MIN_POOL_BALANCE_ASA_ASA_PAIR = MIN_POOL_BALANCE_ASA_ALGO_PAIR + 100_000
 
 
 talgo_approval_program = TealProgram(teal=requests.get("https://github.com/tinymanorg/tinyman-consensus-staking/blob/main/contracts/talgo/build/talgo_approval.teal?raw=True").text)
+
+SWAP_ROUTER_APP_ID = 2001
+SWAP_ROUTER_ADDRESS = get_application_address(SWAP_ROUTER_APP_ID)

@@ -1,8 +1,9 @@
 
-from base64 import b64encode
 from algojig import get_suggested_params
 from algosdk.v2client.algod import AlgodClient
 from algosdk import transaction
+from base64 import b64encode
+from Cryptodome.Hash import SHA512
 
 
 def itob(value):
@@ -103,3 +104,16 @@ class JigAlgod():
             }
         }
         return result
+
+
+def get_event_signature(event_name, event_args):
+    arg_string = ",".join(str(arg.type) for arg in event_args)
+    event_signature = "{}({})".format(event_name, arg_string)
+    return event_signature
+
+
+def get_selector(signature):
+    sha_512_256_hash = SHA512.new(truncate="256")
+    sha_512_256_hash.update(signature.encode("utf-8"))
+    selector = sha_512_256_hash.digest()[:4]
+    return selector
